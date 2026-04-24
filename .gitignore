@@ -1,0 +1,3 @@
+data/daily-*.csv
+data/main.csv
+__pycache__/

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "RescueTime Clone",
+  "version": "1.0",
+  "description": "Reports the active tab URL to the local tracking agent.",
+  "permissions": ["tabs"],
+  "host_permissions": ["http://127.0.0.1:7834/*"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
