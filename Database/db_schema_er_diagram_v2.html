@@ -1,0 +1,191 @@
+<div id="erd"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = false;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+  },
+});
+const { svg } = await mermaid.render('erd-svg', `erDiagram
+  TASKS ||--o{ TASK_INSTANCES : materializes
+  TASK_INSTANCES ||--o{ LEETCODE_RECOMMENDATIONS : contains
+  LEETCODE_PROBLEMS ||--o{ LEETCODE_RECOMMENDATIONS : recommended_as
+  LONG_TERM_GOALS ||--o{ GOAL_ACTION_ITEMS : has
+  LONG_TERM_GOALS ||--o{ GOAL_CHECKINS : reviewed_in
+  GOAL_CHECKINS ||--o{ GOAL_CHECKIN_ITEMS : records
+  GOAL_ACTION_ITEMS ||--o{ GOAL_CHECKIN_ITEMS : evaluated_in
+  SETTINGS ||--o| TASKS : unblock_task
+
+  SETTINGS {
+    int id PK
+    string timezone
+    bool email_enabled
+    bool leetcode_enabled
+    int leetcode_daily_count
+    bool github_tracking_enabled
+    bool job_hunting_mode
+    int goal_checkin_interval_days
+    uuid unblock_task_id FK
+  }
+  TASKS {
+    uuid id PK
+    string task_type "recurring | one_off"
+    string name
+    string importance "low | mid | high"
+    int frequency_days "nullable (recurring)"
+    date due_date "nullable (one_off)"
+    time time_of_day
+    string reason
+    string verification_type "honor | git_commit"
+    string source "manual | leetcode | kanban | github"
+    string external_ref
+    timestamp created_at
+    timestamp deleted_at "soft-delete"
+    string deletion_reason
+  }
+  TASK_INSTANCES {
+    uuid id PK
+    uuid task_id FK
+    date scheduled_date
+    string status "pending|completed|missed|excused|skipped"
+    timestamp completed_at
+    string missed_reason
+    string verification_evidence
+  }
+  LEETCODE_PROBLEMS {
+    uuid id PK
+    int problem_number
+    string title
+    string category
+    string difficulty
+    bool is_active
+  }
+  LEETCODE_RECOMMENDATIONS {
+    uuid id PK
+    uuid instance_id FK
+    uuid problem_id FK
+    bool completed
+  }
+  LONG_TERM_GOALS {
+    uuid id PK
+    string goal
+    string blocking_reason
+    date next_checkin_date
+    timestamp created_at
+    timestamp deleted_at "soft-delete"
+    string deletion_reason
+  }
+  GOAL_ACTION_ITEMS {
+    uuid id PK
+    uuid goal_id FK
+    string text
+    timestamp created_at
+    timestamp retired_at
+  }
+  GOAL_CHECKINS {
+    uuid id PK
+    uuid goal_id FK
+    date checkin_date
+    string user_response
+    string ai_response
+    bool user_ghosted
+    timestamp created_at
+  }
+  GOAL_CHECKIN_ITEMS {
+    uuid id PK
+    uuid checkin_id FK
+    uuid action_item_id FK
+    bool was_done
+  }
+  AI_INTERACTIONS {
+    uuid id PK
+    string type "todo_summary|task_delete|goal_checkin|..."
+    string ref_type
+    uuid ref_id
+    string user_input
+    string ai_response
+    int annoyance_level
+    bool user_ghosted
+    timestamp created_at
+  }
+  EMAILS {
+    uuid id PK
+    string dedup_key UK "sender+subject"
+    string sender
+    string subject
+    string category "job|bank|loan|subscription"
+    timestamp received_at
+    bool is_read
+    timestamp dismissed_at
+    timestamp created_at
+  }
+  ACTIVITY_DAILY {
+    uuid id PK
+    date date
+    string app_or_site
+    string kind "app | website"
+    int seconds
+  }
+  USAGE_LIMITS {
+    uuid id PK
+    string app_or_site
+    int limit_seconds
+  }
+  BLOCKED_APPS {
+    uuid id PK
+    string app_token "global list"
+  }
+  PHONE_UNBLOCK_EVENTS {
+    uuid id PK
+    timestamp occurred_at
+    bool is_emergency
+    string note
+  }
+  CONSEQUENCE_EVENTS {
+    uuid id PK
+    timestamp occurred_at
+    string trigger_reason
+    int amount
+    string status "suggested|paid|skipped"
+  }
+  NOTIFICATIONS {
+    uuid id PK
+    string type
+    uuid ref_id
+    timestamp scheduled_for
+    timestamp sent_at
+    timestamp dismissed_at
+  }`);
+document.getElementById('erd').innerHTML = svg;
+document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
