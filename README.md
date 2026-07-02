@@ -37,6 +37,8 @@ Storage
 - Install is still manual per browser: open `brave://extensions` (or `chrome://extensions` / `edge://extensions`), enable Developer Mode, "Load unpacked", and point it at `extension/build/<browser>/`. You do this once per browser you want tracked (Chrome/Brave/Edge, per the stated Target behavior).
 - Updating logic is now one command instead of hand-editing 3 files: change `extension/src/background.js`, rerun `build_extension.py`, then click the reload icon on the extension's card in each browser's extensions page (no need to remove/re-add or re-pick the folder).
 - `extension/build/` is gitignored — it's generated output, not something to hand-edit or commit.
+- supposidly the user has to turn on allow access to file urls in chromium browsers so the extension can read file url's opened in browser. however I didn't have to do this in brave
+
 
 ## issues found (mostly resolved by the build script; residual gaps below)
 - **Drift risk mostly eliminated**: the 3 build folders can no longer diverge by hand-edit, since they're regenerated from one source file. The remaining manual step is running the build script and clicking reload 3 times — still 3 touches, just no longer 3 places for a typo.
@@ -51,6 +53,33 @@ daily csv is:       timestamp,app,url
 - computer process: 2026-04-16T14:38:23.625197,cursor.exe,
 - website:          2026-04-16T14:38:23.625197,chrome.exe,YouTube.com
 
+let's say this is your usage data. how is it summarized?
+timestamp,app,url
+2026-07-02T15:20:27.980428,cursor.exe,
+2026-07-02T15:20:33.982629,blank browser tab,
+2026-07-02T15:20:36.985125,brave.exe,https://www.youtube.com/
+2026-07-02T15:20:42.987959,blank browser tab,
+2026-07-02T15:20:45.989209,brave.exe,https://www.youtube.com/
+2026-07-02T15:21:06.991947,cursor.exe,
+2026-07-02T15:22:22.010657,explorer.exe,
+2026-07-02T15:22:25.011711,searchhost.exe,
+2026-07-02T15:22:28.013218,steam.exe,
+2026-07-02T15:22:34.014906,cursor.exe,
+2026-07-02T15:22:40.016634,steamwebhelper.exe,
+2026-07-02T15:22:52.019143,windowsterminal.exe,
+2026-07-02T15:22:55.020843,steamwebhelper.exe,
+2026-07-02T15:23:07.025152,slay the spire 2.exe,
+2026-07-02T15:23:13.027245,cursor.exe,
+2026-07-02T15:23:16.028223,slay the spire 2.exe,
+2026-07-02T15:23:19.030031,steamwebhelper.exe,
+2026-07-02T15:23:22.036403,windowsterminal.exe,
+2026-07-02T15:23:28.043396,cursor.exe,
+2026-07-02T15:23:46.047717,brave.exe,https://www.youtube.com/watch?v=7RqD2ClRUEc
+2026-07-02T15:23:55.049792,cursor.exe,
+
+the summarizing function is only called on a day that's already over. so if the user opens the app the next day it would summarize this example data. it looks at seconds between rows timestamps and makes main.csv. if a session crosses midnight then that day's csv ends and a new days csv starts. It would write this to main.csv: date,app,website,duration,url.
+NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T15:31:56.827087,blank browser tab, (labeled that way instead of a blank app so it's not confused with a crash/no-activity row; still dropped during summarization same as before)
+
 # little details about how things really track
 - what if you're swapping between 2 computer apps like cursor and the cmd?
     - each poll (every `POLL_INTERVAL` = 3s) just asks Windows which process currently has the foreground and compares it to the last recorded app. any time that differs, it writes a new daily-csv row (ending cursor's session, starting cmd's), so alt-tabbing between two native apps is tracked correctly and duration falls out of the gap between consecutive timestamps in `summarize_daily_csv()`.
@@ -63,12 +92,17 @@ daily csv is:       timestamp,app,url
 - what if you have 2 browsers side by side and you're doing stuff in both?
     - when you swap browsers (alt tab or change focus) the tracker won't reuse browser A's last url for browser B. it'll treat browser B as "no signal yet" until browser B's extension posts its own url. that's a few seconds delay which is fine.
 
+- what if you don't do anything for 1 hour?
+    - it still polls what you're doing every x seconds like normal. we only record if the app/website changes (focus change). and only 1 row get's written to the daily csv for each change. the resource cost of this wasted effort is negligible, microseconds. we could correct this by tracking if the user does mouse or keyboard inputs, but that's a privacy breach. so we leave it as is.
+
+- new blank tabs
+    - these are logged in the daily csv files but ignored in the summary in main.csv. so it's dropped data in the end
+
+- pdf/html... misc files
+    - these get treated the same as websites
+    - claude comment about this: extensions don't get file:// tab visibility just because `manifest.json` declares `"file:///*"` in `host_permissions` — Chrome/Brave/Edge still require you to flip "Allow access to file URLs" on the extension's card in `brave://extensions` (or `chrome://` / `edge://extensions`) with Developer Mode on. Without that toggle, `tab.url` is empty for local files and none of this fires. Untested end-to-end until that toggle is flipped and verified.
 
 ### TODO
-- Idle detection — your notes.md calls this out as wanted (pause counter after ~60s of no input), but there's zero code for it. Right now a YouTube tab left open all night just accumulates duration forever.
-
-- PDF-viewer / no-tab-loaded edge case — also explicitly flagged in your notes as a known problem, but NEW_TAB_PATTERNS only whitelists new-tab pages, not file://...pdf or Chrome's built-in PDF viewer extension URL. These would currently pollute stats as garbage "websites."
-
 - Crash resilience — if agent.py is killed uncleanly (not Ctrl+C), the in-progress session at the end of that day's daily CSV gets silently dropped when eventually summarized (no end-marker row to compute its duration against). Acceptable by your stated philosophy, but worth knowing.
 
 - Firefox is in tracker.py's KNOWN_BROWSERS, but the extension is Manifest V3 with a chrome.*-namespaced service worker — it won't load in Firefox as-is. Only Chrome/Edge/Brave actually work today.

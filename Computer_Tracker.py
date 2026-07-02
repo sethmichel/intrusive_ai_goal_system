@@ -3,7 +3,7 @@ import time
 import winsound
 from datetime import datetime, date
 
-from Tracker import get_active_window, is_browser, is_new_tab_url
+from Tracker import get_active_window, is_browser, is_new_tab_url, NEW_TAB_LABEL
 from Server import start_server, get_latest_url
 from Storage import (
     ensure_main_csv,
@@ -24,9 +24,9 @@ writes activity rows to the daily CSV, handles midnight rollover, and starts the
 POLL_INTERVAL = 3
 
 
-def _end_session(daily_csv, now):
+def _end_session(daily_csv, now, app_label=""):
     """Write an end-marker row so the previous activity gets a correct duration."""
-    write_daily_row(daily_csv, now.isoformat(), "", "")
+    write_daily_row(daily_csv, now.isoformat(), app_label, "")
 
 
 def main():
@@ -90,7 +90,7 @@ def main():
                 if is_new_tab_url(url):
                     no_ext_counter = 0
                     if current_app is not None:
-                        _end_session(daily_csv, now)
+                        _end_session(daily_csv, now, app_label=NEW_TAB_LABEL)
                         current_app = None
                         current_url = ""
                     time.sleep(POLL_INTERVAL)
@@ -114,7 +114,7 @@ def main():
             # ── record new activity ──
             write_daily_row(daily_csv, now.isoformat(), new_app, new_url)
             label = new_site if new_site else new_app
-            print(f"[{now.strftime('%H:%M:%S')}] {label}")
+            #print(f"[{now.strftime('%H:%M:%S')}] {label}") # prints each activity to the terminal for debugging
             current_app = new_app
             current_url = new_url
 

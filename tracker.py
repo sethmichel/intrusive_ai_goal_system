@@ -30,6 +30,12 @@ NEW_TAB_PATTERNS = frozenset({
     "about:home",
 })
 
+# Label written to the daily CSV's "app" column for the end-marker row that
+# closes out a session when the user switches to a new (blank) browser tab.
+# Kept distinct from "" so the daily CSV isn't confusing, but still dropped
+# during summarize_daily_csv() same as a truly blank app.
+NEW_TAB_LABEL = "blank browser tab"
+
 
 def get_active_window():
     """Return (process_name, window_title) for the foreground window."""

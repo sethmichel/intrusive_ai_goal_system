@@ -11,7 +11,12 @@ const tabDomains = {};
 
 function extractDomain(url) {
   try {
-    const h = new URL(url).hostname;
+    const u = new URL(url);
+    // file:// URLs have no hostname (would all collapse to ""), so use the path
+    // instead -- otherwise navigating from one local file to another in the same
+    // tab would look like "no change" and get silently dropped.
+    if (u.protocol === "file:") return u.pathname;
+    const h = u.hostname;
     return h.startsWith("www.") ? h.slice(4) : h;
   } catch {
     return "";

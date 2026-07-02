@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Reports the active tab URL to the local tracking agent.",
   "permissions": ["tabs"],
-  "host_permissions": ["http://127.0.0.1:7834/*"],
+  "host_permissions": ["http://127.0.0.1:7834/*", "file:///*"],
   "background": {
     "service_worker": "background.js"
   }

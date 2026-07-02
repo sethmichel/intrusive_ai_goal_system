@@ -13,9 +13,18 @@ app/website) before deleting the daily file
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 MAIN_CSV = os.path.join(DATA_DIR, "main.csv")
+WARNINGS_LOG = os.path.join(DATA_DIR, "warnings.log")
 
 MAIN_COLUMNS = ["date", "app", "website", "duration", "url"]
 DAILY_COLUMNS = ["timestamp", "app", "url"]
+
+
+def _log_warning(message):
+    """Print a warning and append it to data/warnings.log. Used for edge cases that should never happen."""
+    print(f"WARNING: {message}")
+    ensure_data_dir()
+    with open(WARNINGS_LOG, "a") as f:
+        f.write(f"{datetime.now().isoformat()} {message}\n")
 
 
 def ensure_data_dir():
@@ -50,10 +59,20 @@ def write_daily_row(daily_path, timestamp, app, url):
 
 
 def extract_website(url):
-    """'https://www.youtube.com/watch?v=abc' -> 'youtube.com'"""
+    """'https://www.youtube.com/watch?v=abc' -> 'youtube.com'
+    'file:///C:/foo/report.pdf' -> 'pdf file' (all local files of one type share a bucket,
+    same as every YouTube video collapsing into 'youtube.com')"""
     if not url:
         return ""
     try:
+        if url.lower().startswith("file://"):
+            ext = os.path.splitext(urlparse(url).path)[1].lstrip(".").lower()
+            if ext in ("htm", "html"):
+                return "html file"
+            if ext == "pdf":
+                return "pdf file"
+            return f"{ext} file" if ext else "local file"
+
         parsed = urlparse(url if "://" in url else f"https://{url}")
         hostname = parsed.hostname or ""
         if hostname.startswith("www."):
@@ -82,7 +101,7 @@ def find_old_daily_csvs():
 
 def summarize_daily_csv(file_date, daily_path):
     """Aggregate a finished daily CSV into main.csv, then delete it."""
-    from tracker import KNOWN_BROWSERS
+    from Tracker import KNOWN_BROWSERS, NEW_TAB_LABEL
 
     rows = []
     with open(daily_path, "r", newline="") as f:
@@ -97,16 +116,34 @@ def summarize_daily_csv(file_date, daily_path):
     totals = {}
 
     for i in range(len(rows) - 1):
-        app = rows[i]["app"]
-        url = rows[i]["url"]
+        app = rows[i].get("app")
+        url = rows[i].get("url")
 
-        if not app:
+        if app is None or url is None:
+            _log_warning(
+                f"summarize_daily_csv: row {i} in {daily_path} is missing an 'app' or 'url' "
+                f"column ({rows[i]!r}); skipping row."
+            )
+            continue
+
+        if not app or app == NEW_TAB_LABEL:
+            # expected end-marker row (written by _end_session with an empty url) -- unless
+            # it somehow has a url attached, which should never happen
+            if app != NEW_TAB_LABEL and url:
+                _log_warning(
+                    f"summarize_daily_csv: row {i} in {daily_path} has no app name but has a "
+                    f"url ({url!r}); skipping row. This should never happen."
+                )
             continue
 
         try:
             ts = datetime.fromisoformat(rows[i]["timestamp"])
             next_ts = datetime.fromisoformat(rows[i + 1]["timestamp"])
-        except (ValueError, KeyError):
+        except (ValueError, KeyError) as e:
+            _log_warning(
+                f"summarize_daily_csv: row {i} in {daily_path} has an unparseable timestamp "
+                f"({e}); skipping row."
+            )
             continue
 
         duration = (next_ts - ts).total_seconds()
