@@ -1,6 +1,13 @@
 import ctypes
 from ctypes import wintypes
 
+'''
+low-level Windows window-tracking logic: it uses ctypes to call Win32 APIs (GetForegroundWindow, QueryFullProcessImageNameW, etc.) 
+to get the current foreground process name/title, and has helpers is_browser() / is_new_tab_url() to classify browsers and filter 
+out new-tab pages
+'''
+
+
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 

@@ -1,5 +1,11 @@
 const AGENT_URL = "http://127.0.0.1:7834";
 
+// Which browser process this extension instance is running in. Filled in by
+// build_extension.py at build time to match Tracker.py's KNOWN_BROWSERS
+// (e.g. "chrome.exe", "msedge.exe", "brave.exe"). Can't be detected reliably
+// at runtime because Brave's user agent deliberately mimics Chrome's.
+const BROWSER_PROCESS = "__BROWSER_PROCESS__";
+
 // Per-tab domain tracking so same-domain navigations don't fire extra POSTs
 const tabDomains = {};
 
@@ -16,7 +22,7 @@ function postUrl(url) {
   fetch(AGENT_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, browser: BROWSER_PROCESS }),
   }).catch(() => {}); // fire-and-forget
 }
 

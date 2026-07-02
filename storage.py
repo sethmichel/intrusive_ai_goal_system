@@ -3,6 +3,14 @@ import os
 from datetime import datetime, date
 from urllib.parse import urlparse
 
+'''
+handles all CSV persistence: creating data/main.csv and per-day data/daily-<date>.csv files, writing raw activity rows, 
+extracting hostnames from URLs, and summarizing/aggregating a finished day's raw rows into main.csv (total seconds per 
+app/website) before deleting the daily file
+'''
+
+
+
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 MAIN_CSV = os.path.join(DATA_DIR, "main.csv")
 

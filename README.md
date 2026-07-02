@@ -1,0 +1,120 @@
+### summary
+The Computer Tracker
+- Tracks users active window: polls win32 foreground window every x seconds, gets the process name.
+- if the process is a browser: we need to ask the browser extension for the tab name. We treat websites as actual websites, not urls. so youtube includes all variations of the youtube url
+- we only write a row when teh app or domain (website) change
+
+The browser extension
+- I think it POSTS the active tabs url every time there's a tab switch, same tab navigation (domain change only), and window focus change. posts to a http server
+- this gives info to the computer tracker, it doesn't record data itself
+
+Storage
+- store data in csv files
+    - daily-{date}.csv is the raw event log
+    - main.csv: storage.summarize_daily_csv summarizes the daily csv such that each unique process and website only has 1 line. so it adds duplicates up
+
+
+# exactly how computer apps are tracked
+- Every 3s (`POLL_INTERVAL`), `Tracker.get_active_window()` calls `GetForegroundWindow()` -> `GetWindowThreadProcessId()` -> `OpenProcess()` -> `QueryFullProcessImageNameW()` (pure ctypes, no libs) to get the .exe name of whatever window has focus (e.g. `notepad.exe`).
+- If that process is NOT in `KNOWN_BROWSERS`, it's treated as a native app: `new_app = process_name`, `new_url = ""`. new_url isn't for tracking in this case, it's a required variable
+- The loop compares `(new_app, new_site)` to `(current_app, cur_site)` from the last poll (if it's not a browser this comparison is just new_app vs current_app). Only on a change does it call `write_daily_row()` to append a row to `data/daily-<date>.csv` (so "Notepad" open for an hour is one row, not 1200 rows).
+- If the foreground window can't be read at all (`process_name` is None — e.g. screen locked), it writes an end-marker row (empty app/url) so the prior app's duration closes out, then keeps polling.
+- Later, `Storage.summarize_daily_csv()` buckets every native-app row by `(app, "")` and sums durations — so "Notepad" is one bucket regardless of which file was open, matching the Target behavior section.
+- URL for a computer app is just blank in storage. 
+
+# exactly how browser websites are tracked
+- The extension (`extension/src/background.js`) is what actually knows the URL — the tracker never reads browser internals directly, only the OS-level foreground process (which just says "chrome.exe", not what tab is open).
+- `BROWSER_PROCESS` in `extension/src/background.js` is a `__BROWSER_PROCESS__` placeholder, not a real value — `extension/build_extension.py` stamps in the real value (`"chrome.exe"` / `"msedge.exe"` / `"brave.exe"`, matching `Tracker.py`'s `KNOWN_BROWSERS`) per browser when it generates `extension/build/<browser>/`. It can't be detected reliably at runtime because Brave's user agent deliberately mimics Chrome's.
+- The extension POSTs `{url, browser}` to `http://127.0.0.1:7834` (fire-and-forget `fetch`, errors swallowed) on 3 triggers: `chrome.tabs.onActivated` (tab switch), `chrome.tabs.onUpdated` (same-tab navigation, but only if `extractDomain()` of the new URL differs from the tracked domain for that tab — so YouTube video-to-video within the same tab doesn't spam POSTs), and `chrome.windows.onFocusChanged` (switching back to a browser window).
+- `Server.py`'s `_ExtensionHandler.do_POST` is the only endpoint. It parses the JSON body and stores the latest `(url, browser)` pair in lock-protected globals (`_latest_url`, `_latest_browser`) — no history, no per-tab tracking server-side, it's overwritten on every POST.
+- Every poll (3s), if `Tracker.is_browser(process_name)` is true, `Computer_Tracker.py` calls `Server.get_latest_url(process_name)`, passing in the currently-foregrounded browser's process name. The server only returns the stored URL if `_latest_browser` matches `process_name` — otherwise it returns `None`, so a stale URL from a different browser never gets attributed to the one you just switched to. Note this is still decoupled from the poll otherwise: if the matching browser posted 2 seconds ago and hasn't posted since, the tracker just keeps reading that same value (expected — you're still on that tab).
+- If `get_latest_url()` returns `None` (extension never posted anything, e.g. not installed/loaded, *or* you just switched to a browser whose extension hasn't posted its own URL yet), the tracker ends the current session and increments `no_ext_counter`; after 10 consecutive misses (30s) it fires a `winsound` beep to alert you the extension isn't running. In the browser-switch case this self-resolves within a poll or two once that browser's extension posts.
+- `Tracker.is_new_tab_url()` filters out new-tab/blank pages (`chrome://newtab`, `about:blank`, etc.) so opening a new tab doesn't get logged as a "website."
+- The URL gets stored as-is in `daily-<date>.csv`, but for aggregation `Storage.extract_website()` reduces it to just the hostname (stripping `www.`) via `urlparse` — that's what collapses every YouTube video URL into one `youtube.com` bucket in `main.csv`.
+
+# exactly how the extension gets on the browser
+- There's still no packaging or store listing — no `.crx`, no `update_url`/`key`. But there is now a build step: `extension/src/` is the single source of truth (`background.js` there has a `__BROWSER_PROCESS__` placeholder, not a real value), and `python extension/build_extension.py` generates `extension/build/chrome/`, `extension/build/brave/`, `extension/build/edge/` — each a self-contained, loadable folder with the placeholder replaced by the right value for that browser.
+- Install is still manual per browser: open `brave://extensions` (or `chrome://extensions` / `edge://extensions`), enable Developer Mode, "Load unpacked", and point it at `extension/build/<browser>/`. You do this once per browser you want tracked (Chrome/Brave/Edge, per the stated Target behavior).
+- Updating logic is now one command instead of hand-editing 3 files: change `extension/src/background.js`, rerun `build_extension.py`, then click the reload icon on the extension's card in each browser's extensions page (no need to remove/re-add or re-pick the folder).
+- `extension/build/` is gitignored — it's generated output, not something to hand-edit or commit.
+
+## issues found (mostly resolved by the build script; residual gaps below)
+- **Drift risk mostly eliminated**: the 3 build folders can no longer diverge by hand-edit, since they're regenerated from one source file. The remaining manual step is running the build script and clicking reload 3 times — still 3 touches, just no longer 3 places for a typo.
+- **No incognito handling**, per the existing TODO — unpacked extensions are disabled in Incognito/private windows by default and the manifest doesn't set the `incognito` key or document the manual "Allow in Incognito" toggle.
+- **Dev-mode nag**: since this will only ever be an unpacked, unsigned extension, Brave/Chrome/Edge show a "disable developer mode extensions" warning banner on every browser restart. Not a functional bug, but worth knowing since this is meant to run continuously in the background.
+- **Still undocumented for a new user**: nothing outside this README mentions that `build_extension.py` needs to run before "Load unpacked," or that you load a different `build/<browser>/` folder per browser — an install doc is still a TODO.
+
+# how we'll continue tracking if the user enters private browsing mode
+
+# exactly how storage works
+daily csv is:       timestamp,app,url
+- computer process: 2026-04-16T14:38:23.625197,cursor.exe,
+- website:          2026-04-16T14:38:23.625197,chrome.exe,YouTube.com
+
+# little details about how things really track
+- what if you're swapping between 2 computer apps like cursor and the cmd?
+    - each poll (every `POLL_INTERVAL` = 3s) just asks Windows which process currently has the foreground and compares it to the last recorded app. any time that differs, it writes a new daily-csv row (ending cursor's session, starting cmd's), so alt-tabbing between two native apps is tracked correctly and duration falls out of the gap between consecutive timestamps in `summarize_daily_csv()`.
+    - the catch is granularity: since detection only happens on the 3s poll, not on the actual OS focus-change event, swaps faster than ~3s can be missed or misattributed — if you bounce between cursor and cmd twice within one 3s window, the tracker only sees whichever one happened to have focus at the moment it polled, and the row it writes will over/undercount accordingly.
+
+- what if you have a long youtube video playing in a browser and you minimize that for an hour while you work on a computer app like cursor?
+    - tldr: it only tracks the in focus app. so youtube would count until you change to cursor, then it's all cursor.
+    - this is already handled correctly, and for the same reason as the cursor/cmd case above: the tracker only cares about which process has the *foreground*, not what's playing in the background. the moment you minimize the browser (or alt-tab to cursor), the next poll sees cursor.exe as the foreground process, that's a change from chrome.exe, so it writes a row for cursor and that row's timestamp is also what closes out the youtube.com session in `summarize_daily_csv()` (duration = gap between the youtube row and the next row).
+
+- what if you have 2 browsers side by side and you're doing stuff in both?
+    - when you swap browsers (alt tab or change focus) the tracker won't reuse browser A's last url for browser B. it'll treat browser B as "no signal yet" until browser B's extension posts its own url. that's a few seconds delay which is fine.
+
+
+### TODO
+- Idle detection — your notes.md calls this out as wanted (pause counter after ~60s of no input), but there's zero code for it. Right now a YouTube tab left open all night just accumulates duration forever.
+
+- PDF-viewer / no-tab-loaded edge case — also explicitly flagged in your notes as a known problem, but NEW_TAB_PATTERNS only whitelists new-tab pages, not file://...pdf or Chrome's built-in PDF viewer extension URL. These would currently pollute stats as garbage "websites."
+
+- Crash resilience — if agent.py is killed uncleanly (not Ctrl+C), the in-progress session at the end of that day's daily CSV gets silently dropped when eventually summarized (no end-marker row to compute its duration against). Acceptable by your stated philosophy, but worth knowing.
+
+- Firefox is in tracker.py's KNOWN_BROWSERS, but the extension is Manifest V3 with a chrome.*-namespaced service worker — it won't load in Firefox as-is. Only Chrome/Edge/Brave actually work today.
+
+- Private/incognito browsing tracking — Chrome/Brave disable extensions in Incognito windows by default; nothing in the manifest, code, or docs addresses this. The user has to manually flip "Allow in Incognito" per-browser-profile in chrome://extensions, and that's currently undocumented and untested. This is the biggest gap
+
+- Productive vs. unproductive classification. The entire "wasted time" framing depends on categorizing apps/sites (work vs. distraction). There's no category mapping anywhere — main.csv just has raw uncategorized durations.
+
+- Auto-start / background service. No Task Scheduler entry, no startup shortcut, no tray icon. You have to manually run python agent.py in a terminal every time.
+
+- Install docs for the extension (load-unpacked steps, enabling Incognito access) — nothing written down.
+
+- Config — port, poll interval, browser list are all hardcoded constants, not a config file.
+
+- how is midnight handled? if you're watching youtube across midnight what happens?
+
+- do I care about this? The endpoint has no authentication and accepts any POST from any local process. So a local program (malware, another script, a malicious browser extension) could POST fake URLs and skew your tracking
+
+# Target behavior
+- "Notepad" is one bucket regardless of what file is open
+
+- "YouTube.com" is one bucket regardless of what video is open
+
+- behavior is exactly the same across Chrome, Brave, Edge (the 3 primary browsers)
+
+- We don't need any gui or action taken on the data collected. this project will get absorbed into a bigger project that will handle that.
+
+- multi tasking between apps and even between two browsers, shouldn't have any bugs and should be accurate
+
+
+# claudes recommended todo for today
+me: make a config file that has stuff like known_browsers. and confirm what I want the csv file names to be and what data I actually track
+
+Get today's build actually usable:
+1. Run python Computer_Tracker.py, run python extension/build_extension.py, load extension/build/brave/ unpacked in brave://extensions (dev mode on), confirm a row lands in daily-{today}.csv.
+2. Manually enable "Allow in Incognito" for the extension and verify tracking actually still works in a private window — right now this is untested, not just undocumented.
+3. Add idle detection (pause the counter after N seconds of no input) — you already scoped this in notes.md.
+4. Whitelist PDF-viewer / file:// / no-tab-loaded URLs so they don't corrupt the website stats.
+
+Make it a real product before merging into the larger project:
+5. Build a reporting layer that reads main.csv — even a simple CLI summary ("today: 3h Chrome, 45m YouTube") is enough to start.
+6. Add a productive/unproductive category mapping (config file: app or domain → category) and a "time wasted" rollup — this is the actual point of the app per your description.
+7. Auto-start on boot (Task Scheduler entry or startup-folder shortcut) so you're not manually launching a terminal.
+8. Write a short README covering setup, extension install, and the Incognito toggle step.
+
+Lower priority / nice-to-have:
+9. Decide whether Firefox support is worth a second manifest, or drop it from KNOWN_BROWSERS.
+10. Crash-safety improvement for the dropped final-session edge case.
+11. Basic tests around storage.summarize_daily_csv (you already have a de facto test case in the leftover April 16 data).

@@ -3,9 +3,9 @@ import time
 import winsound
 from datetime import datetime, date
 
-from tracker import get_active_window, is_browser, is_new_tab_url
-from server import start_server, get_latest_url
-from storage import (
+from Tracker import get_active_window, is_browser, is_new_tab_url
+from Server import start_server, get_latest_url
+from Storage import (
     ensure_main_csv,
     ensure_daily_csv,
     get_daily_csv_path,
@@ -14,6 +14,12 @@ from storage import (
     summarize_daily_csv,
     check_and_summarize_old_dailies,
 )
+
+'''
+main entry point/orchestrator. It runs the polling loop: checks the active window every 3s, detects app/browser switches, 
+writes activity rows to the daily CSV, handles midnight rollover, and starts the local server
+'''
+
 
 POLL_INTERVAL = 3
 
@@ -67,7 +73,7 @@ def main():
 
             # ── browser handling ──
             if is_browser(process_name):
-                url = get_latest_url()
+                url = get_latest_url(process_name)
 
                 if url is None:
                     no_ext_counter += 1

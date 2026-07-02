@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "RescueTime Clone",
+  "name": "RescueTime Clone (__BROWSER_PROCESS__)",
   "version": "1.0",
   "description": "Reports the active tab URL to the local tracking agent.",
   "permissions": ["tabs"],
