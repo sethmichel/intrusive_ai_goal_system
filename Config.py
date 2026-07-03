@@ -14,6 +14,15 @@ POLL_INTERVAL = 3  # seconds between foreground-window checks
 NO_EXTENSION_ALERT_THRESHOLD = 10  # consecutive polls with no extension POST before beeping
 SUSPEND_GAP_SECONDS = 30  # wall-clock gap between polls above this => machine was suspended/frozen
 
+# ── summary filtering ──
+# Windows processes that still get logged to the daily CSV like any other app, but are
+# excluded from Summarized_Activities.csv because they're OS chrome, not real activity.
+SUMMARY_IGNORED_APPS = frozenset({
+    "lockapp.exe",
+    "searchhost.exe",
+    "explorer.exe",
+})
+
 # ── paths ──
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")

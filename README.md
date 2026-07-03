@@ -112,26 +112,10 @@ NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T1
     - you have to give the extension permission in settings for that extension
 
 # TODO
--  done but untested
-    - Sleep/hibernate inflates durations. fix: If wall-clock elapsed since the last poll exceeds the threshold (machine was suspended/frozen), it closes the prior session at last_poll_time + POLL_INTERVAL instead of crediting the whole gap. Placed before the midnight-rollover check so a sleep across midnight closes out into the correct (old) day's CSV.
-
-- done but untested
-    - Clean shutdown + single-instance guard (Tracker.py, Computer_Tracker.py)
-        - acquire_single_instance_lock() — a Windows named mutex (auto-released by the OS on exit, no stale lockfile). main() bails early if another instance holds it.
-        - A finally: block now calls server.shutdown() / server.server_close() so the HTTP server thread and socket are torn down cleanly instead of dangling on the daemon thread — important for embedding in the host project.
-
-- I don't tell the extension that the server is shut down, so the extension fires forever
-
-- done but untested
-    - I lost my data if the summarize feature crashes part way through
-        - fix: New _append_rows_atomic() copies the existing Summarized_Activities.csv plus the new rows into a temp file in the same dir, fsyncs, then os.replace() (atomic on Windows within a volume). summarize_daily_csv() now builds all of a day's rows first and appends them in that single all-or-nothing write, so a crash mid-append can no longer leave a date partially summarized (which get_summarized_dates() would then treat as done and permanently drop the rest of the day).
+- this almost certinaly needs to be moved to a sql database. I'm just not sure if that's sqlite or pg
 
 # done
-- improved crash resiliancy
-- made a how to install file for the extension
-- confirmed midnight rollovers are handled
-- moved configs to a config file
-- noted how to do private mode monitoring
+- changed duration to hour:minute:second
 
 ### changes for V2
 - security issue: right now the program doesn't authenticate incoming extension info
@@ -142,3 +126,6 @@ NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T1
 - is there anyway to stream line the private mode browsing enabling? it's a pain to turn on right now
 - disable the beep, it's only for debugging. probably shouldn't print warnings either
 - Timestamps are naive local time. datetime.now() / date.today() throughout. Fine on one machine today, but for a data agent feeding a bigger system it's worth either (a) documenting "all times are machine-local, no tz" as part of the schema contract, or (b) storing UTC. DST fall-back can also produce a negative-duration session — currently silently dropped by the duration <= 0 guard (Storage.py:188), which is acceptable but undocumented.
+- when making the summary file, right now it makes a temp file and builds the changes all once before writing to the actual file so it does all or nothing in case it crashes part way through. but if a truly unclean kill (e.g., power loss) happens during the write, the except block won't run and a stray .tmp file could be left in the data dir — harmless, but worth knowing since it's not cleaned up on next startup.
+- the extension never stops: right now every postUrl call fires blind and just swallows the error via .catch(() => {}), so there's no state tracking whether the server is reachable. The clean fix is a small circuit-breaker: track consecutive failures in a module-level counter, and once it crosses a threshold (e.g. 2-3), skip firing POSTs entirely and instead probe periodically (via chrome.alarms, since MV3 service workers can't rely on setInterval surviving suspension) until one succeeds, then resume normal posting.
+The tradeoff: since fetches to 127.0.0.1 fail near-instantly on connection-refused, the current "just eat the error" approach costs almost nothing performance-wise — the main win from adding this would be cutting console noise/failed network calls in dev tools, not fixing a real bug. Want me to implement the circuit-breaker, or is this more about confirming there's no side effect from posting to a dead server?

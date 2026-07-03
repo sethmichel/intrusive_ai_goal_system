@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime, date, timedelta
 from urllib.parse import urlparse
 
-from Config import DATA_DIR, DAILY_LOGS_DIR, MAIN_CSV, WARNINGS_LOG
+from Config import DATA_DIR, DAILY_LOGS_DIR, MAIN_CSV, SUMMARY_IGNORED_APPS, WARNINGS_LOG
 
 '''
 handles all CSV persistence: creating data/Summarized_Activities.csv and per-day
@@ -109,6 +109,14 @@ def extract_website(url):
         return hostname
     except Exception:
         return ""
+
+
+def _format_duration(seconds):
+    """round(secs) -> 'H:MM:SS'"""
+    seconds = round(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
 def find_old_daily_csvs():
@@ -220,6 +228,8 @@ def summarize_daily_csv(file_date, daily_path):
                 continue
             key = ("", website)
         else:
+            if app.lower() in SUMMARY_IGNORED_APPS:
+                continue
             key = (app, "")
 
         totals[key] = totals.get(key, 0) + duration
@@ -227,7 +237,7 @@ def summarize_daily_csv(file_date, daily_path):
     # Build every row for this day first, then append them in a single atomic
     # write so a crash can't half-summarize the date (see _append_rows_atomic).
     new_rows = [
-        [file_date.isoformat(), app, website, round(secs), website or ""]
+        [file_date.isoformat(), app, website, _format_duration(secs), website or ""]
         for (app, website), secs in totals.items()
     ]
     if new_rows:
