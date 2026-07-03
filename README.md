@@ -103,7 +103,7 @@ NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T1
     - claude comment about this: extensions don't get file:// tab visibility just because `manifest.json` declares `"file:///*"` in `host_permissions` — Chrome/Brave/Edge still require you to flip "Allow access to file URLs" on the extension's card in `brave://extensions` (or `chrome://` / `edge://extensions`) with Developer Mode on. Without that toggle, `tab.url` is empty for local files and none of this fires. Untested end-to-end until that toggle is flipped and verified.
 
 ### TODO
-- Crash resilience — if agent.py is killed uncleanly (not Ctrl+C), the in-progress session at the end of that day's daily CSV gets silently dropped when eventually summarized (no end-marker row to compute its duration against). Acceptable by your stated philosophy, but worth knowing.
+- Crash resilience — if computer_tracker.py is killed uncleanly (not Ctrl+C), the in-progress session at the end of that day's daily CSV gets silently dropped when eventually summarized (no end-marker row to compute its duration against). Acceptable by your stated philosophy, but worth knowing.
 
 - Firefox is in tracker.py's KNOWN_BROWSERS, but the extension is Manifest V3 with a chrome.*-namespaced service worker — it won't load in Firefox as-is. Only Chrome/Edge/Brave actually work today.
 
@@ -111,7 +111,7 @@ NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T1
 
 - Productive vs. unproductive classification. The entire "wasted time" framing depends on categorizing apps/sites (work vs. distraction). There's no category mapping anywhere — main.csv just has raw uncategorized durations.
 
-- Auto-start / background service. No Task Scheduler entry, no startup shortcut, no tray icon. You have to manually run python agent.py in a terminal every time.
+- Auto-start / background service. No Task Scheduler entry, no startup shortcut, no tray icon. You have to manually run python computer_tracker.py in a terminal every time.
 
 - Install docs for the extension (load-unpacked steps, enabling Incognito access) — nothing written down.
 
