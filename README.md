@@ -37,14 +37,14 @@ Storage
 - Install is still manual per browser: open `brave://extensions` (or `chrome://extensions` / `edge://extensions`), enable Developer Mode, "Load unpacked", and point it at `extension/build/<browser>/`. You do this once per browser you want tracked (Chrome/Brave/Edge, per the stated Target behavior).
 - Updating logic is now one command instead of hand-editing 3 files: change `extension/src/background.js`, rerun `build_extension.py`, then click the reload icon on the extension's card in each browser's extensions page (no need to remove/re-add or re-pick the folder).
 - `extension/build/` is gitignored — it's generated output, not something to hand-edit or commit.
-- supposidly the user has to turn on allow access to file urls in chromium browsers so the extension can read file url's opened in browser. however I didn't have to do this in brave
+- supposidly the user has to turn on allow access to file urls in chromium browsers so the extension can read file url's opened in browser. however I didn't have to do this in brave (didn't see the toggle at all) — see `extension/HOW_TO_INSTALL.md`, this may be version/browser-dependent
 
 
 ## issues found (mostly resolved by the build script; residual gaps below)
 - **Drift risk mostly eliminated**: the 3 build folders can no longer diverge by hand-edit, since they're regenerated from one source file. The remaining manual step is running the build script and clicking reload 3 times — still 3 touches, just no longer 3 places for a typo.
 - **No incognito handling**, per the existing TODO — unpacked extensions are disabled in Incognito/private windows by default and the manifest doesn't set the `incognito` key or document the manual "Allow in Incognito" toggle.
 - **Dev-mode nag**: since this will only ever be an unpacked, unsigned extension, Brave/Chrome/Edge show a "disable developer mode extensions" warning banner on every browser restart. Not a functional bug, but worth knowing since this is meant to run continuously in the background.
-- **Still undocumented for a new user**: nothing outside this README mentions that `build_extension.py` needs to run before "Load unpacked," or that you load a different `build/<browser>/` folder per browser — an install doc is still a TODO.
+- **Install doc now exists**: `extension/HOW_TO_INSTALL.md` covers building, loading per-browser, the (maybe-not-needed) file URL toggle, and verifying it worked.
 
 # how we'll continue tracking if the user enters private browsing mode
 
@@ -102,53 +102,43 @@ NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T1
     - these get treated the same as websites
     - claude comment about this: extensions don't get file:// tab visibility just because `manifest.json` declares `"file:///*"` in `host_permissions` — Chrome/Brave/Edge still require you to flip "Allow access to file URLs" on the extension's card in `brave://extensions` (or `chrome://` / `edge://extensions`) with Developer Mode on. Without that toggle, `tab.url` is empty for local files and none of this fires. Untested end-to-end until that toggle is flipped and verified.
 
-### TODO
-- Crash resilience — if computer_tracker.py is killed uncleanly (not Ctrl+C), the in-progress session at the end of that day's daily CSV gets silently dropped when eventually summarized (no end-marker row to compute its duration against). Acceptable by your stated philosophy, but worth knowing.
+- what if it crashes?
+    - the last known activity won't get an ending line written after it, but the summary feature will correct that and write a warning to the logs
 
-- Firefox is in tracker.py's KNOWN_BROWSERS, but the extension is Manifest V3 with a chrome.*-namespaced service worker — it won't load in Firefox as-is. Only Chrome/Edge/Brave actually work today.
+- what happens across midnight if the user is using it?
+    - it ends the activity for that day and starts it for the next day
 
-- Private/incognito browsing tracking — Chrome/Brave disable extensions in Incognito windows by default; nothing in the manifest, code, or docs addresses this. The user has to manually flip "Allow in Incognito" per-browser-profile in chrome://extensions, and that's currently undocumented and untested. This is the biggest gap
+- in v1 how do you enable private browsing tracking?
+    - you have to give the extension permission in settings for that extension
 
+# TODO
+-  done but untested
+    - Sleep/hibernate inflates durations. fix: If wall-clock elapsed since the last poll exceeds the threshold (machine was suspended/frozen), it closes the prior session at last_poll_time + POLL_INTERVAL instead of crediting the whole gap. Placed before the midnight-rollover check so a sleep across midnight closes out into the correct (old) day's CSV.
+
+- done but untested
+    - Clean shutdown + single-instance guard (Tracker.py, Computer_Tracker.py)
+        - acquire_single_instance_lock() — a Windows named mutex (auto-released by the OS on exit, no stale lockfile). main() bails early if another instance holds it.
+        - A finally: block now calls server.shutdown() / server.server_close() so the HTTP server thread and socket are torn down cleanly instead of dangling on the daemon thread — important for embedding in the host project.
+
+- I don't tell the extension that the server is shut down, so the extension fires forever
+
+- done but untested
+    - I lost my data if the summarize feature crashes part way through
+        - fix: New _append_rows_atomic() copies the existing Summarized_Activities.csv plus the new rows into a temp file in the same dir, fsyncs, then os.replace() (atomic on Windows within a volume). summarize_daily_csv() now builds all of a day's rows first and appends them in that single all-or-nothing write, so a crash mid-append can no longer leave a date partially summarized (which get_summarized_dates() would then treat as done and permanently drop the rest of the day).
+
+# done
+- improved crash resiliancy
+- made a how to install file for the extension
+- confirmed midnight rollovers are handled
+- moved configs to a config file
+- noted how to do private mode monitoring
+
+### changes for V2
+- security issue: right now the program doesn't authenticate incoming extension info
+- add firefox support
+- make the extension on the extension stores
 - Productive vs. unproductive classification. The entire "wasted time" framing depends on categorizing apps/sites (work vs. distraction). There's no category mapping anywhere — main.csv just has raw uncategorized durations.
-
 - Auto-start / background service. No Task Scheduler entry, no startup shortcut, no tray icon. You have to manually run python computer_tracker.py in a terminal every time.
-
-- Install docs for the extension (load-unpacked steps, enabling Incognito access) — nothing written down.
-
-- Config — port, poll interval, browser list are all hardcoded constants, not a config file.
-
-- how is midnight handled? if you're watching youtube across midnight what happens?
-
-- do I care about this? The endpoint has no authentication and accepts any POST from any local process. So a local program (malware, another script, a malicious browser extension) could POST fake URLs and skew your tracking
-
-# Target behavior
-- "Notepad" is one bucket regardless of what file is open
-
-- "YouTube.com" is one bucket regardless of what video is open
-
-- behavior is exactly the same across Chrome, Brave, Edge (the 3 primary browsers)
-
-- We don't need any gui or action taken on the data collected. this project will get absorbed into a bigger project that will handle that.
-
-- multi tasking between apps and even between two browsers, shouldn't have any bugs and should be accurate
-
-
-# claudes recommended todo for today
-me: make a config file that has stuff like known_browsers. and confirm what I want the csv file names to be and what data I actually track
-
-Get today's build actually usable:
-1. Run python Computer_Tracker.py, run python extension/build_extension.py, load extension/build/brave/ unpacked in brave://extensions (dev mode on), confirm a row lands in daily-{today}.csv.
-2. Manually enable "Allow in Incognito" for the extension and verify tracking actually still works in a private window — right now this is untested, not just undocumented.
-3. Add idle detection (pause the counter after N seconds of no input) — you already scoped this in notes.md.
-4. Whitelist PDF-viewer / file:// / no-tab-loaded URLs so they don't corrupt the website stats.
-
-Make it a real product before merging into the larger project:
-5. Build a reporting layer that reads main.csv — even a simple CLI summary ("today: 3h Chrome, 45m YouTube") is enough to start.
-6. Add a productive/unproductive category mapping (config file: app or domain → category) and a "time wasted" rollup — this is the actual point of the app per your description.
-7. Auto-start on boot (Task Scheduler entry or startup-folder shortcut) so you're not manually launching a terminal.
-8. Write a short README covering setup, extension install, and the Incognito toggle step.
-
-Lower priority / nice-to-have:
-9. Decide whether Firefox support is worth a second manifest, or drop it from KNOWN_BROWSERS.
-10. Crash-safety improvement for the dropped final-session edge case.
-11. Basic tests around storage.summarize_daily_csv (you already have a de facto test case in the leftover April 16 data).
+- is there anyway to stream line the private mode browsing enabling? it's a pain to turn on right now
+- disable the beep, it's only for debugging. probably shouldn't print warnings either
+- Timestamps are naive local time. datetime.now() / date.today() throughout. Fine on one machine today, but for a data agent feeding a bigger system it's worth either (a) documenting "all times are machine-local, no tz" as part of the schema contract, or (b) storing UTC. DST fall-back can also produce a negative-duration session — currently silently dropped by the duration <= 0 guard (Storage.py:188), which is acceptable but undocumented.

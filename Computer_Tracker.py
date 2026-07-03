@@ -1,9 +1,15 @@
 import os
 import time
 import winsound
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
-from Tracker import get_active_window, is_browser, is_new_tab_url, NEW_TAB_LABEL
+from Tracker import (
+    get_active_window,
+    is_browser,
+    is_new_tab_url,
+    NEW_TAB_LABEL,
+    acquire_single_instance_lock,
+)
 from Server import start_server, get_latest_url
 from Storage import (
     ensure_main_csv,
@@ -14,14 +20,12 @@ from Storage import (
     summarize_daily_csv,
     check_and_summarize_old_dailies,
 )
+from Config import POLL_INTERVAL, SERVER_HOST, NO_EXTENSION_ALERT_THRESHOLD, SUSPEND_GAP_SECONDS
 
 '''
-main entry point/orchestrator. It runs the polling loop: checks the active window every 3s, detects app/browser switches, 
+main entry point/orchestrator. It runs the polling loop: checks the active window every 3s, detects app/browser switches,
 writes activity rows to the daily CSV, handles midnight rollover, and starts the local server
 '''
-
-
-POLL_INTERVAL = 3
 
 
 def _end_session(daily_csv, now, app_label=""):
@@ -30,6 +34,11 @@ def _end_session(daily_csv, now, app_label=""):
 
 
 def main():
+    lock = acquire_single_instance_lock()
+    if lock is None:
+        print("Another tracker instance is already running; exiting.")
+        return
+
     ensure_main_csv()
     check_and_summarize_old_dailies()
 
@@ -37,15 +46,31 @@ def main():
     daily_csv = ensure_daily_csv(current_date)
 
     server, port = start_server()
-    print(f"Tracking started. Extension server on 127.0.0.1:{port}")
+    print(f"Tracking started. Extension server on {SERVER_HOST}:{port}")
 
     current_app = None
     current_url = ""
     no_ext_counter = 0
+    last_poll_time = datetime.now()
 
     try:
         while True:
             now = datetime.now()
+
+            # ── suspend/resume detection ──
+            # If far more wall-clock time elapsed than our poll interval, the
+            # machine was almost certainly suspended (sleep/hibernate) or the
+            # process was frozen. Don't credit that whole gap to whatever had
+            # focus -- close the prior session at the last time we know it was
+            # actually active (~one interval past the last poll) instead. This
+            # runs before the midnight check so a sleep across midnight closes
+            # out into the correct (old) day's CSV.
+            if (now - last_poll_time).total_seconds() > SUSPEND_GAP_SECONDS:
+                if current_app is not None:
+                    _end_session(daily_csv, last_poll_time + timedelta(seconds=POLL_INTERVAL))
+                    current_app = None
+                    current_url = ""
+            last_poll_time = now
 
             # ── midnight rollover ──
             if now.date() != current_date:
@@ -77,7 +102,7 @@ def main():
 
                 if url is None:
                     no_ext_counter += 1
-                    if no_ext_counter >= 10:
+                    if no_ext_counter >= NO_EXTENSION_ALERT_THRESHOLD:
                         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
                         no_ext_counter = 0
                     if current_app is not None:
@@ -124,6 +149,9 @@ def main():
         if current_app is not None:
             _end_session(daily_csv, datetime.now())
         print("\nTracking stopped.")
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 if __name__ == "__main__":

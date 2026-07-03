@@ -26,16 +26,14 @@ Data flow: `extension/src/background.js` (built per-browser into `extension/buil
 - **Tracker.py** — Win32 layer via `ctypes` (`GetForegroundWindow`, `QueryFullProcessImageNameW`, etc.), no external deps. Exposes `get_active_window()`, `is_browser()`, `is_new_tab_url()`, and the `KNOWN_BROWSERS` / `NEW_TAB_PATTERNS` constants. New-tab pages are filtered out so they don't get tracked as "activity."
 - **Server.py** — minimal `http.server.HTTPServer` run on a background daemon thread. Only endpoint is `POST /` from the extension; holds just the single latest URL behind a lock, read via `get_latest_url()`.
 - **Storage.py** — all CSV I/O, in `data/`:
-  - `data/daily-<date>.csv` — raw event log for the current day (columns: `timestamp, app, url`). A row is written on every app/site change, plus an empty-app "end marker" row whenever tracking stops/pauses, so duration can be computed as `(next_row.timestamp - this_row.timestamp)`.
-  - `data/main.csv` — the aggregated result (columns: `date, app, website, duration, url`). `summarize_daily_csv()` walks a finished daily CSV pairwise, buckets by `(app, "")` for native apps or `("", website)` for browser tabs (using hostname only, so all YouTube videos collapse into one `youtube.com` bucket), sums durations per bucket, appends one row per bucket to `main.csv`, then deletes the daily CSV.
-  - Old, not-today daily CSVs get swept into `main.csv` on startup via `check_and_summarize_old_dailies()` (crash/restart recovery).
+  - `data/daily_activity_logs/Daily_Activity_Logs-<date>.csv` — raw event log for the current day (columns: `timestamp, app, url`). A row is written on every app/site change, plus an empty-app "end marker" row whenever tracking stops/pauses, so duration can be computed as `(next_row.timestamp - this_row.timestamp)`.
+  - `data/Summarized_Activities.csv` — the aggregated result (columns: `date, app, website, duration, url`). `summarize_daily_csv()` walks a finished daily CSV pairwise, buckets by `(app, "")` for native apps or `("", website)` for browser tabs (using hostname only, so all YouTube videos collapse into one `youtube.com` bucket), sums durations per bucket, and appends one row per bucket to `Summarized_Activities.csv`. The daily CSV is kept on disk afterward (not deleted) as a raw log.
+  - Old, not-today daily CSVs get swept into `Summarized_Activities.csv` on startup via `check_and_summarize_old_dailies()` (crash/restart recovery); it skips any date already present in `Summarized_Activities.csv` so kept daily logs aren't double-counted.
 - **extension/** — Manifest V3 Chrome/Brave/Edge extension. `src/` holds the single source of truth (`background.js` has a `__BROWSER_PROCESS__` placeholder instead of a hardcoded value); `build_extension.py` stamps that placeholder into per-browser copies under `build/<browser>/` (gitignored). `background.js` posts the active tab URL on tab-switch, same-tab domain-changing navigation, and window-focus change (fire-and-forget fetch, errors swallowed). It does not record data itself — it's purely a URL reporter for `Server.py`.
 
 ## Known gotchas (see README.md TODO section for the full list)
 
-- `Storage.py` imports `from tracker import KNOWN_BROWSERS` (lowercase) while the file is `Tracker.py` — only works because Windows filesystems are case-insensitive.
 - No idle detection yet — a tab/app left open accumulates duration indefinitely.
-- Firefox is listed in `KNOWN_BROWSERS` but the extension is Manifest V3 with a `chrome.*`-namespaced service worker, so it won't actually load in Firefox.
 - Incognito/private windows: extensions are disabled there by default and this isn't handled or documented anywhere yet.
 - No productive/unproductive category mapping — `main.csv` is raw uncategorized durations only.
 - Hardcoded constants throughout (port `7834`, `POLL_INTERVAL = 3`) rather than a config file.

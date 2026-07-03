@@ -2,6 +2,8 @@ import json
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+from Config import SERVER_HOST, SERVER_PORT
+
 
 '''
 this is the HTTP server the browser extension posts to. It starts a background HTTPServer and exposes get_latest_url()
@@ -51,8 +53,8 @@ def get_latest_url(process_name):
         return _latest_url
 
 
-def start_server(port=7834):
-    server = HTTPServer(("127.0.0.1", port), _ExtensionHandler)
+def start_server(port=SERVER_PORT):
+    server = HTTPServer((SERVER_HOST, port), _ExtensionHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, port

@@ -15,7 +15,6 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 KNOWN_BROWSERS = frozenset({
     "chrome.exe",
-    "firefox.exe",
     "msedge.exe",
     "brave.exe",
 })
@@ -81,3 +80,22 @@ def is_new_tab_url(url):
         return False
     cleaned = url.lower().split("?")[0].split("#")[0].rstrip("/")
     return cleaned in NEW_TAB_PATTERNS
+
+
+def acquire_single_instance_lock(name="RescueTimeClone_Tracker_SingleInstance"):
+    """Single-instance guard via a Windows named mutex. Returns an opaque handle
+    if this is the only running instance (keep the returned value alive for the
+    process lifetime), or None if another instance already holds the lock. The OS
+    releases the mutex automatically when the process exits, so there is no stale
+    lock file to clean up. Returns True if the mutex couldn't be created at all,
+    so a failure here never blocks startup."""
+    ERROR_ALREADY_EXISTS = 183
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return True
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return None
+    return handle

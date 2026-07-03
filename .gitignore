@@ -1,5 +1,5 @@
-data/daily-*.csv
-data/main.csv
-data/warnings.log
+data/daily_activity_logs/Daily_Activity_Logs-*.csv
+data/Summarized_Activities.csv
+warnings.log
 __pycache__/
 extension/build/

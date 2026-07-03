@@ -6,5 +6,5 @@
 - leave a youtube video running and click something else to change focus. check back on this later, 
 - click around cursor (cursor.exe)
 - with cursor in focus, don't do anything for 20 seconds. it should just be 1 cursor entry
-- load a pdf with an already open browser
-- close the browser and open a pdf again so it opens a browser
+- load a pdf with an already open browser (should appear like url)
+- close the browser and open a pdf again so it opens a browser (should appear like url)
