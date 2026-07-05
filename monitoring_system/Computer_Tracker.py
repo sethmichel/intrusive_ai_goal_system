@@ -20,11 +20,22 @@ from Storage import (
     summarize_daily_csv,
     check_and_summarize_old_dailies,
 )
-from Config import POLL_INTERVAL, SERVER_HOST, NO_EXTENSION_ALERT_THRESHOLD, SUSPEND_GAP_SECONDS
+from Config import (
+    POLL_INTERVAL,
+    SERVER_HOST,
+    NO_EXTENSION_ALERT_THRESHOLD,
+    SUSPEND_GAP_SECONDS,
+    SUMMARY_IGNORED_APPS,
+)
+from Api_Sync import ApiSync
 
 '''
 main entry point/orchestrator. It runs the polling loop: checks the active window every 3s, detects app/browser switches,
-writes activity rows to the daily CSV, handles midnight rollover, and starts the local server
+writes activity rows to the daily CSV, handles midnight rollover, and starts the local server.
+
+Every time a session ends (focus change, suspend, midnight, lock, quit) the finished duration is
+also pushed to the Pi API via Api_Sync (offline-queued if the Pi is unreachable). The CSVs remain
+the local raw log; the server's activity_daily table is the canonical shared copy.
 '''
 
 
@@ -52,6 +63,27 @@ def main():
     current_url = ""
     no_ext_counter = 0
     last_poll_time = datetime.now()
+    session_start = None
+    sync = ApiSync()
+
+    def sync_session_end(end_time):
+        """Push the just-finished session's duration to the Pi API. Mirrors the
+        summarizer's bucketing exactly: browsers -> ('', website), native apps
+        -> (app, ''), OS chrome and blank tabs skipped. Bucketed under the day
+        the session STARTED (midnight rollover closes sessions within seconds
+        of 00:00, so spillover is negligible)."""
+        if current_app is None or session_start is None:
+            return
+        duration = (end_time - session_start).total_seconds()
+        if duration <= 0:
+            return
+        day = session_start.date().isoformat()
+        if is_browser(current_app):
+            website = extract_website(current_url)
+            if website:
+                sync.enqueue(day, "", website, duration, current_url)
+        elif current_app.lower() not in SUMMARY_IGNORED_APPS:
+            sync.enqueue(day, current_app, "", duration, None)
 
     try:
         while True:
@@ -67,14 +99,18 @@ def main():
             # out into the correct (old) day's CSV.
             if (now - last_poll_time).total_seconds() > SUSPEND_GAP_SECONDS:
                 if current_app is not None:
-                    _end_session(daily_csv, last_poll_time + timedelta(seconds=POLL_INTERVAL))
+                    end_time = last_poll_time + timedelta(seconds=POLL_INTERVAL)
+                    sync_session_end(end_time)
+                    _end_session(daily_csv, end_time)
                     current_app = None
                     current_url = ""
+                    session_start = None
             last_poll_time = now
 
             # ── midnight rollover ──
             if now.date() != current_date:
                 if current_app is not None:
+                    sync_session_end(now)
                     _end_session(daily_csv, now)
                 old_path = daily_csv
                 old_date = current_date
@@ -84,15 +120,18 @@ def main():
                 daily_csv = ensure_daily_csv(current_date)
                 current_app = None
                 current_url = ""
+                session_start = None
 
             # ── poll active window ──
             process_name, _ = get_active_window()
 
             if not process_name:
                 if current_app is not None:
+                    sync_session_end(now)
                     _end_session(daily_csv, now)
                     current_app = None
                     current_url = ""
+                    session_start = None
                 time.sleep(POLL_INTERVAL)
                 continue
 
@@ -106,18 +145,22 @@ def main():
                         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
                         no_ext_counter = 0
                     if current_app is not None:
+                        sync_session_end(now)
                         _end_session(daily_csv, now)
                         current_app = None
                         current_url = ""
+                        session_start = None
                     time.sleep(POLL_INTERVAL)
                     continue
 
                 if is_new_tab_url(url):
                     no_ext_counter = 0
                     if current_app is not None:
+                        sync_session_end(now)
                         _end_session(daily_csv, now, app_label=NEW_TAB_LABEL)
                         current_app = None
                         current_url = ""
+                        session_start = None
                     time.sleep(POLL_INTERVAL)
                     continue
 
@@ -137,17 +180,21 @@ def main():
                 continue
 
             # ── record new activity ──
+            sync_session_end(now)  # the new row is what ends the previous session
             write_daily_row(daily_csv, now.isoformat(), new_app, new_url)
             label = new_site if new_site else new_app
             #print(f"[{now.strftime('%H:%M:%S')}] {label}") # prints each activity to the terminal for debugging
             current_app = new_app
             current_url = new_url
+            session_start = now
 
             time.sleep(POLL_INTERVAL)
 
     except KeyboardInterrupt:
         if current_app is not None:
-            _end_session(daily_csv, datetime.now())
+            end_time = datetime.now()
+            sync_session_end(end_time)
+            _end_session(daily_csv, end_time)
         print("\nTracking stopped.")
     finally:
         server.shutdown()

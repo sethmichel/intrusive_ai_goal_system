@@ -1,0 +1,4 @@
+{
+  "server_url": "http://100.x.y.z:8734",
+  "api_token": "same-token-as-server/config.json"
+}

@@ -1,0 +1,21 @@
+# secrets / per-machine config (copy the .example files instead)
+client_config.json
+server/config.json
+
+# server runtime
+server/accountability.db
+server/accountability.db-wal
+server/accountability.db-shm
+server/venv/
+
+# computer app runtime
+computer_app/launcher.log
+
+# phone app
+phone_app/node_modules/
+phone_app/.expo/
+
+# monitoring system
+monitoring_system/data
+
+__pycache__/

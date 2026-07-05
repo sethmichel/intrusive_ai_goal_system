@@ -1,0 +1,8 @@
+{
+  "db_path": "accountability.db",
+  "api_token": "PASTE-OUTPUT-OF: python -c \"import secrets; print(secrets.token_urlsafe(32))\"",
+  "gemma_api_key": "your-key-from-aistudio.google.com",
+  "gemma_model": "gemma-4-26b-a4b-it",
+  "host": "",
+  "port": 8734
+}

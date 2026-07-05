@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accountability</title>
+<style>
+  :root {
+    --bg: #16161e; --panel: #1f1f2b; --panel2: #262636; --text: #e6e6f0;
+    --dim: #9a9ab0; --accent: #89b4fa; --good: #a6e3a1; --warn: #f9e2af; --bad: #f38ba8;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 4px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid #000; }
+  header h1 { font-size: 16px; margin: 0 18px 0 0; color: var(--accent); }
+  .tab { background: none; border: none; color: var(--dim); padding: 8px 14px; font-size: 14px; cursor: pointer; border-radius: 8px; }
+  .tab.active { background: var(--panel2); color: var(--text); }
+  main { padding: 18px; max-width: 1000px; margin: 0 auto; }
+  .card { background: var(--panel); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 15px; color: var(--accent); }
+  .banner { border-left: 3px solid var(--warn); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid #2c2c3d; }
+  .row:last-child { border-bottom: none; }
+  .row .grow { flex: 1; }
+  .muted { color: var(--dim); font-size: 12.5px; }
+  .done { text-decoration: line-through; color: var(--dim); }
+  .imp { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--panel2); }
+  .imp.high { color: var(--bad); } .imp.mid { color: var(--warn); } .imp.low { color: var(--dim); }
+  button.btn { background: var(--panel2); color: var(--text); border: 1px solid #3a3a4f; border-radius: 8px; padding: 7px 13px; font-size: 13px; cursor: pointer; }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn.primary { background: var(--accent); color: #14141c; border: none; font-weight: 600; }
+  button.btn.danger { color: var(--bad); }
+  input, select, textarea { background: var(--panel2); color: var(--text); border: 1px solid #3a3a4f; border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  textarea { width: 100%; resize: vertical; }
+  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  form.grid .full { grid-column: 1 / -1; }
+  .ai-msg { background: var(--panel2); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px; margin: 8px 0; white-space: pre-wrap; }
+  .user-msg { background: #2a3b55; border-radius: 8px; padding: 10px 12px; margin: 8px 0 8px 40px; white-space: pre-wrap; }
+  /* modal for 1-shot conversations */
+  #modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; }
+  #modal { background: var(--panel); border-radius: var(--radius); width: min(620px, 92vw); max-height: 85vh; overflow-y: auto; padding: 18px; }
+  #modal h2 { margin-top: 0; font-size: 15px; color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  #chat-log { min-height: 300px; max-height: 55vh; overflow-y: auto; }
+  .chat-input { display: flex; gap: 8px; margin-top: 10px; }
+  .chat-input textarea { flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #2c2c3d; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; }
+  #conn-warning { color: var(--bad); font-size: 12.5px; margin-left: auto; }
+  label.check { display: flex; gap: 6px; align-items: center; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Accountability</h1>
+  <button class="tab active" data-view="today">Today</button>
+  <button class="tab" data-view="tasks">Tasks</button>
+  <button class="tab" data-view="goals">Goals</button>
+  <button class="tab" data-view="activity">Activity</button>
+  <button class="tab" data-view="chat">Chat</button>
+  <span id="conn-warning"></span>
+</header>
+<main id="main"></main>
+
+<div id="modal-back"><div id="modal"></div></div>
+
+<script>
+"use strict";
+/* All state lives on the server; this page is a dumb client of the Pi API.
+   1-shot AI conversations (missed items, deletions, check-ins) run in the
+   modal; every one ends with a "Continue in chat" option that carries the
+   transcript to the Chat tab (in-memory only -- closing the app ends it,
+   per the v1 decision that conversations are never persisted). */
+
+let CFG = { server_url: "", api_token: "" };
+let chatTranscript = [];   // [{role:'ai'|'user', text}]
+let currentView = "today";
+
+async function loadConfig() {
+  if (window.pywebview && window.pywebview.api) {
+    CFG = await window.pywebview.api.get_config();
+  } else {
+    // dev fallback: open this file in a normal browser
+    CFG = JSON.parse(localStorage.getItem("client_config") || '{"server_url":"","api_token":""}');
+    if (!CFG.server_url) {
+      CFG.server_url = prompt("Server URL (e.g. http://100.x.y.z:8734):") || "";
+      CFG.api_token = prompt("API token:") || "";
+      localStorage.setItem("client_config", JSON.stringify(CFG));
+    }
+  }
+}
+
+async function api(method, path, body) {
+  const resp = await fetch(CFG.server_url + path, {
+    method,
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + CFG.api_token },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(method + " " + path + " -> " + resp.status + " " + await resp.text());
+  return resp.json();
+}
+
+function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
+function esc(s) { return (s ?? "").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtSecs(s) { const h = Math.floor(s/3600), m = Math.floor(s%3600/60); return h ? `${h}h ${m}m` : m ? `${m}m` : `${s}s`; }
+
+/* ── one-shot conversation modal ────────────────────────────────── */
+
+const modalBack = document.getElementById("modal-back");
+const modal = document.getElementById("modal");
+function closeModal() { modalBack.style.display = "none"; modal.innerHTML = ""; }
+modalBack.addEventListener("click", e => { if (e.target === modalBack) closeModal(); });
+
+/* opts: {title, skill, params, extraControlsHtml?, collectExtra?, onDone?} */
+async function openOneShot(opts) {
+  modalBack.style.display = "flex";
+  modal.innerHTML = `<h2>${esc(opts.title)}</h2><p class="muted">thinking...</p>`;
+  let opening;
+  try {
+    opening = (await api("POST", `/skills/${opts.skill}/open`, { params: opts.params || {} })).message;
+  } catch (e) { modal.innerHTML = `<h2>Error</h2><p>${esc(e.message)}</p>`; return; }
+
+  modal.innerHTML = `
+    <h2>${esc(opts.title)}</h2>
+    <div class="ai-msg">${esc(opening)}</div>
+    ${opts.extraControlsHtml || ""}
+    <textarea id="os-reply" rows="3" placeholder="Your answer..."></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="os-cancel">Cancel</button>
+      <button class="btn primary" id="os-send">Send</button>
+    </div>`;
+  document.getElementById("os-cancel").onclick = closeModal;
+  document.getElementById("os-send").onclick = async () => {
+    const userText = document.getElementById("os-reply").value.trim();
+    if (!userText) return;
+    const extra = opts.collectExtra ? opts.collectExtra(modal) : null;
+    document.getElementById("os-send").disabled = true;
+    let closing;
+    try {
+      closing = (await api("POST", `/skills/${opts.skill}/respond`, {
+        params: opts.params || {}, transcript: [{ role: "ai", text: opening }],
+        user_message: userText, extra,
+      })).message;
+    } catch (e) { alert(e.message); closeModal(); return; }
+    const transcript = [{ role: "ai", text: opening }, { role: "user", text: userText }, { role: "ai", text: closing }];
+    modal.innerHTML = `
+      <h2>${esc(opts.title)}</h2>
+      <div class="ai-msg">${esc(opening)}</div>
+      <div class="user-msg">${esc(userText)}</div>
+      <div class="ai-msg">${esc(closing)}</div>
+      <div class="modal-actions">
+        <button class="btn" id="os-continue">Continue in chat</button>
+        <button class="btn primary" id="os-done">Done</button>
+      </div>`;
+    document.getElementById("os-done").onclick = () => { closeModal(); if (opts.onDone) opts.onDone(); };
+    document.getElementById("os-continue").onclick = () => {
+      chatTranscript = transcript.slice();
+      closeModal(); if (opts.onDone) opts.onDone();
+      switchView("chat");
+    };
+  };
+}
+
+/* ── views ──────────────────────────────────────────────────────── */
+
+const main = document.getElementById("main");
+
+async function renderToday() {
+  const t = await api("GET", "/todo/today");
+  main.innerHTML = "";
+
+  if (t.missed_yesterday.length) {
+    const names = t.missed_yesterday.map(m => m.name).join(", ");
+    const c = el(`<div class="card banner"><h2>Missed yesterday</h2>
+      <p>${esc(names)}</p><button class="btn">Explain to the AI</button></div>`);
+    c.querySelector("button").onclick = () =>
+      openOneShot({ title: "About yesterday...", skill: "missed_yesterday", params: {}, onDone: renderToday });
+    main.appendChild(c);
+  }
+
+  for (const g of t.goal_checkins_due) {
+    const c = el(`<div class="card banner"><h2>Goal check-in due</h2>
+      <p>${esc(g.goal)}</p><button class="btn">Do the check-in</button></div>`);
+    c.querySelector("button").onclick = () => openGoalCheckin(g.id, renderToday);
+    main.appendChild(c);
+  }
+
+  const todo = el(`<div class="card"><h2>Today — ${esc(t.date)}</h2>
+    <div id="todo-items"></div>
+    <div class="modal-actions" style="justify-content:flex-start">
+      <button class="btn" id="narrate">AI's take on today</button>
+    </div><div id="narration"></div></div>`);
+  const items = todo.querySelector("#todo-items");
+  if (!t.instances.length) items.appendChild(el(`<p class="muted">Nothing on the list. Add tasks in the Tasks tab.</p>`));
+  for (const i of t.instances) {
+    const r = el(`<div class="row">
+      <input type="checkbox" ${i.status === "completed" ? "checked" : ""}>
+      <span class="grow ${i.status === "completed" ? "done" : ""}">${esc(i.name)}
+        ${i.time_of_day ? `<span class="muted"> @ ${esc(i.time_of_day)}</span>` : ""}</span>
+      <span class="imp ${i.importance}">${i.importance}</span></div>`);
+    r.querySelector("input").onchange = async (e) => {
+      await api("PATCH", `/task-instances/${i.id}`, { status: e.target.checked ? "completed" : "pending" });
+      renderToday();
+    };
+    items.appendChild(r);
+  }
+  todo.querySelector("#narrate").onclick = async () => {
+    todo.querySelector("#narration").innerHTML = `<p class="muted">thinking...</p>`;
+    const m = await api("POST", "/skills/todo_narration/open", { params: {} });
+    todo.querySelector("#narration").innerHTML = `<div class="ai-msg">${esc(m.message)}</div>`;
+  };
+  main.appendChild(todo);
+
+  const up = el(`<div class="card"><h2>Due in the next 3 days</h2><div id="up"></div></div>`);
+  const upDiv = up.querySelector("#up");
+  if (!t.upcoming.length) upDiv.appendChild(el(`<p class="muted">Nothing coming up.</p>`));
+  for (const u of t.upcoming)
+    upDiv.appendChild(el(`<div class="row"><span class="grow">${esc(u.name)}</span>
+      <span class="muted">${esc(u.due)}</span><span class="imp ${u.importance}">${u.importance}</span></div>`));
+  main.appendChild(up);
+
+  const mid = el(`<div class="card"><button class="btn">Mid-day check-in</button></div>`);
+  mid.querySelector("button").onclick = () =>
+    openOneShot({ title: "Mid-day check-in", skill: "midday_checkin", params: {} });
+  main.appendChild(mid);
+}
+
+async function renderTasks() {
+  const tasks = await api("GET", "/tasks?include_deleted=true");
+  main.innerHTML = "";
+
+  const form = el(`<div class="card"><h2>Add a task</h2>
+    <form class="grid">
+      <input name="name" placeholder="Task name" required>
+      <select name="task_type"><option value="recurring">recurring</option><option value="one_off">one-off</option></select>
+      <select name="importance"><option>low</option><option selected>mid</option><option>high</option></select>
+      <input name="frequency_days" type="number" min="1" placeholder="every N days (recurring)">
+      <input name="due_date" type="date" title="due date (one-off)">
+      <input name="time_of_day" type="time" title="optional reminder time">
+      <input name="reason" class="full" placeholder="why this matters (optional -- the AI will remember it)">
+      <button class="btn primary full" type="submit">Add</button>
+    </form></div>`);
+  form.querySelector("form").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const type = f.get("task_type");
+    try {
+      await api("POST", "/tasks", {
+        task_type: type, name: f.get("name"), importance: f.get("importance"),
+        frequency_days: type === "recurring" ? parseInt(f.get("frequency_days") || "0") || null : null,
+        due_date: type === "one_off" ? (f.get("due_date") || null) : null,
+        time_of_day: f.get("time_of_day") || null, reason: f.get("reason") || null,
+      });
+      renderTasks();
+    } catch (err) { alert(err.message); }
+  };
+  main.appendChild(form);
+
+  const active = tasks.filter(t => !t.deleted_at);
+  const deleted = tasks.filter(t => t.deleted_at);
+
+  const list = el(`<div class="card"><h2>Scheduled &amp; one-off tasks</h2>
+    <p class="muted">These are day-to-day tasks. Long-term goals live in their own tab.
+    Deleting a task means justifying it to the AI first.</p><div id="list"></div></div>`);
+  const ld = list.querySelector("#list");
+  if (!active.length) ld.appendChild(el(`<p class="muted">No tasks yet.</p>`));
+  for (const t of active) {
+    const detail = t.task_type === "recurring" ? `every ${t.frequency_days}d` : `due ${t.due_date}`;
+    const r = el(`<div class="row"><span class="grow">${esc(t.name)}
+        <span class="muted">${detail}${t.time_of_day ? " @ " + esc(t.time_of_day) : ""}</span></span>
+      <span class="imp ${t.importance}">${t.importance}</span>
+      <button class="btn danger">Delete</button></div>`);
+    r.querySelector("button").onclick = () =>
+      openOneShot({ title: `Deleting "${t.name}"`, skill: "delete_task", params: { task_id: t.id }, onDone: renderTasks });
+    ld.appendChild(r);
+  }
+  main.appendChild(list);
+
+  if (deleted.length) {
+    const hist = el(`<div class="card"><h2>Deleted history</h2><div id="h"></div></div>`);
+    const hd = hist.querySelector("#h");
+    for (const t of deleted) {
+      const r = el(`<div class="row"><span class="grow done">${esc(t.name)}
+          <span class="muted">${esc(t.deletion_reason || "")}</span></span>
+        ${t.task_type === "one_off" ? '<button class="btn">Restore</button>' : ""}</div>`);
+      const btn = r.querySelector("button");
+      if (btn) btn.onclick = async () => {
+        const due = prompt("New due date (YYYY-MM-DD):");
+        if (!due) return;
+        try { await api("POST", `/tasks/${t.id}/restore`, { due_date: due }); renderTasks(); }
+        catch (err) { alert(err.message); }
+      };
+      hd.appendChild(r);
+    }
+    main.appendChild(hist);
+  }
+}
+
+function openGoalCheckin(goalId, onDone) {
+  api("GET", "/goals").then(goals => {
+    const g = goals.find(x => x.id === goalId);
+    openOneShot({
+      title: `Check-in: ${g.goal}`,
+      skill: "goal_checkin",
+      params: { goal_id: goalId },
+      extraControlsHtml: `
+        <label class="check"><input type="checkbox" id="ck-d1"> I did item 1: <span class="muted">${esc(g.action_item_1 || "(not set)")}</span></label>
+        <label class="check"><input type="checkbox" id="ck-d2"> I did item 2: <span class="muted">${esc(g.action_item_2 || "(not set)")}</span></label>
+        <input id="ck-n1" class="full" style="width:100%;margin:6px 0" placeholder="replace item 1 (leave blank to keep)">
+        <input id="ck-n2" class="full" style="width:100%;margin:0 0 6px" placeholder="replace item 2 (leave blank to keep)">`,
+      collectExtra: (m) => ({
+        action_item_1_done: m.querySelector("#ck-d1").checked,
+        action_item_2_done: m.querySelector("#ck-d2").checked,
+        new_action_item_1: m.querySelector("#ck-n1").value.trim() || null,
+        new_action_item_2: m.querySelector("#ck-n2").value.trim() || null,
+      }),
+      onDone,
+    });
+  });
+}
+
+async function renderGoals() {
+  const goals = await api("GET", "/goals");
+  main.innerHTML = "";
+
+  const form = el(`<div class="card"><h2>Add a long-term goal</h2>
+    <form class="grid">
+      <input name="goal" class="full" placeholder="The goal (e.g. start going to the gym)" required>
+      <input name="blocking_reason" class="full" placeholder="what's blocking it right now (optional)">
+      <input name="action_item_1" class="full" placeholder="action item 1 (always exactly 2 -- your next concrete steps)">
+      <input name="action_item_2" class="full" placeholder="action item 2">
+      <button class="btn primary full" type="submit">Add</button>
+    </form></div>`);
+  form.querySelector("form").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    await api("POST", "/goals", {
+      goal: f.get("goal"), blocking_reason: f.get("blocking_reason") || null,
+      action_item_1: f.get("action_item_1") || null, action_item_2: f.get("action_item_2") || null,
+    });
+    renderGoals();
+  };
+  main.appendChild(form);
+
+  if (!goals.length) main.appendChild(el(`<div class="card"><p class="muted">No goals yet. The AI will eventually ask why.</p></div>`));
+  for (const g of goals) {
+    const c = el(`<div class="card"><h2>${esc(g.goal)}</h2>
+      ${g.blocking_reason ? `<p class="muted">blocked by: ${esc(g.blocking_reason)}</p>` : ""}
+      <div class="row"><span class="grow">1. ${esc(g.action_item_1 || "(not set)")}</span></div>
+      <div class="row"><span class="grow">2. ${esc(g.action_item_2 || "(not set)")}</span></div>
+      <p class="muted">next check-in: ${esc(g.next_checkin_date)}</p>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button class="btn" data-a="edit">Edit items</button>
+        <button class="btn" data-a="checkin">Check in now</button>
+        <button class="btn danger" data-a="del">Delete</button>
+      </div></div>`);
+    c.querySelector('[data-a="del"]').onclick = () =>
+      openOneShot({ title: `Deleting goal "${g.goal}"`, skill: "delete_goal", params: { goal_id: g.id }, onDone: renderGoals });
+    c.querySelector('[data-a="checkin"]').onclick = () => openGoalCheckin(g.id, renderGoals);
+    c.querySelector('[data-a="edit"]').onclick = async () => {
+      const a1 = prompt("Action item 1:", g.action_item_1 || "");
+      if (a1 === null) return;
+      const a2 = prompt("Action item 2:", g.action_item_2 || "");
+      if (a2 === null) return;
+      await api("PATCH", `/goals/${g.id}`, { goal: g.goal, blocking_reason: g.blocking_reason, action_item_1: a1, action_item_2: a2 });
+      renderGoals();
+    };
+    main.appendChild(c);
+  }
+}
+
+async function renderActivity() {
+  const rows = await api("GET", "/activity/today");
+  main.innerHTML = "";
+  const c = el(`<div class="card"><h2>Screen time today</h2>
+    <p class="muted">Live from the tracker -- each row updates when you switch away from an app/site.</p>
+    <table><thead><tr><th>App / website</th><th>Time</th></tr></thead><tbody></tbody></table></div>`);
+  const tb = c.querySelector("tbody");
+  if (!rows.length) tb.appendChild(el(`<tr><td colspan="2" class="muted">No activity synced yet today.</td></tr>`));
+  for (const r of rows)
+    tb.appendChild(el(`<tr><td>${esc(r.website || r.app)}</td><td>${fmtSecs(r.duration_seconds)}</td></tr>`));
+  main.appendChild(c);
+}
+
+function renderChat() {
+  main.innerHTML = "";
+  const c = el(`<div class="card"><h2>Chat</h2>
+    <p class="muted">Nothing here is saved -- close the app and the conversation is gone.</p>
+    <div id="chat-log"></div>
+    <div class="chat-input"><textarea id="chat-text" rows="2" placeholder="Say something..."></textarea>
+    <button class="btn primary" id="chat-send">Send</button></div></div>`);
+  const log = c.querySelector("#chat-log");
+  const redraw = () => {
+    log.innerHTML = "";
+    for (const m of chatTranscript)
+      log.appendChild(el(`<div class="${m.role === "ai" ? "ai-msg" : "user-msg"}">${esc(m.text)}</div>`));
+    log.scrollTop = log.scrollHeight;
+  };
+  redraw();
+  c.querySelector("#chat-send").onclick = async () => {
+    const text = c.querySelector("#chat-text").value.trim();
+    if (!text) return;
+    c.querySelector("#chat-text").value = "";
+    chatTranscript.push({ role: "user", text });
+    redraw();
+    try {
+      const r = await api("POST", "/chat", { messages: chatTranscript });
+      chatTranscript.push({ role: "ai", text: r.message });
+    } catch (e) { chatTranscript.push({ role: "ai", text: "[error: " + e.message + "]" }); }
+    redraw();
+  };
+  main.appendChild(c);
+}
+
+const VIEWS = { today: renderToday, tasks: renderTasks, goals: renderGoals, activity: renderActivity, chat: renderChat };
+
+async function switchView(name) {
+  currentView = name;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  main.innerHTML = `<p class="muted">loading...</p>`;
+  try {
+    await VIEWS[name]();
+    document.getElementById("conn-warning").textContent = "";
+  } catch (e) {
+    document.getElementById("conn-warning").textContent = "server unreachable";
+    main.innerHTML = `<div class="card"><h2>Can't reach the server</h2>
+      <p class="muted">${esc(e.message)}</p>
+      <p class="muted">Check that the Pi is up, tailscale is connected, and client_config.json has the right server_url/api_token.</p></div>`;
+  }
+}
+
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => switchView(b.dataset.view));
+
+async function start() { await loadConfig(); switchView("today"); }
+if (window.pywebview) start();
+else window.addEventListener("pywebviewready", start) || document.addEventListener("DOMContentLoaded", () => { if (!window.pywebview) start(); });
+</script>
+</body>
+</html>
