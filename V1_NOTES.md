@@ -13,7 +13,20 @@
 
 # todo
 - move secrets to a more secure system. right now if the files are accidently removed from gitignore then they'd be pushed to the public github. api key, token, unicorn server (x.x.x.x)
+- pick a host id, it's just x.x.x.x right now
+- get a gemma key
+- test loading teh expo app on phone
 - untested: the tray/pywebview apps with their deps actually installed, the phone app on a device, and real Gemma calls (no key present — everything runs with a visible "[AI disabled]" placeholder until you add one).
+    - does the app appear in windows tray
+    - does it start at startup
+    - hows the app and computer dashboard look?
+- for the phone and computer common things I can probably make like an error class, maybe a transition class (for between screens or something)... like what did tmobile do for this?
+- hows the database schema holding up?
+- lower the write load from monitoring system. right now I think it pushes every session end to the pi, that means every update goes to the pi since only session ends are logged. let's change that to every few minutes to reduce write load (check if this actually matters). if I did that I'd have to have some way to know what didn't get written if the computer suddenly shuts down and restarts
+    - rename csv files to backups since that's what they are now
+
+# v2
+- phone and desktop notifications if you haven't opened the app that day
 
 
 ======================================================================================================
@@ -35,7 +48,7 @@ server/         FastAPI + sqlite + the Gemma key. Runs on the Pi. The ONLY thing
 monitoring_system/  unchanged except: session-ends now also POST to the server (CSV stays as the local raw log)
 ```
 
-Order of first-time setup: `server/README.md` → `computer_app/README.md` → `phone_app/README.md`.
+Order of first-time setup: `server/README.md` → `computer_app/README.md` → `phone_app/README.md`. ================================================>>>>>>>>> here
 Every piece degrades gracefully: no Gemma key → visible "[AI disabled]" placeholder replies;
 no client_config.json → tracker runs CSV-only like before; Pi unreachable → tracker events
 queue on disk and flush later.
@@ -143,3 +156,16 @@ matches your answer — close the app and the conversation is gone forever, noth
    server-side crash recovery for the one-dangling-session gap (have the tracker sweep
    unsynced CSV summaries into `/activity` on startup), iOS reminders, then the
    receipts/app-avoidance skills from your notes.
+
+
+
+# me: getting the pi working
+- raspberry pi 3 b+
+- download raspberry pi imager (this can get the os)
+- from the imager, download the raspberry pi os lite (64 bit)
+- put the database on a usb drive (sd cards wear out too fast under sustiained small writes)
+
+right now I cant' write the os to my sd card because it errors out at like 70% and says the card might be damgaed
+- haven't tried nathans card
+
+pressure plate system

@@ -12,7 +12,7 @@ from Tracker import (
 )
 from Server import start_server, get_latest_url
 from Storage import (
-    ensure_main_csv,
+    ensure_summary_dir,
     ensure_daily_csv,
     get_daily_csv_path,
     write_daily_row,
@@ -50,7 +50,7 @@ def main():
         print("Another tracker instance is already running; exiting.")
         return
 
-    ensure_main_csv()
+    ensure_summary_dir()
     check_and_summarize_old_dailies()
 
     current_date = date.today()

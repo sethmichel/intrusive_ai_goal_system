@@ -16,7 +16,7 @@ SUSPEND_GAP_SECONDS = 30  # wall-clock gap between polls above this => machine w
 
 # ── summary filtering ──
 # Windows processes that still get logged to the daily CSV like any other app, but are
-# excluded from Summarized_Activities.csv because they're OS chrome, not real activity.
+# excluded from the monthly Summarized_Activities_*.csv files because they're OS chrome, not real activity.
 SUMMARY_IGNORED_APPS = frozenset({
     "lockapp.exe",
     "searchhost.exe",
@@ -27,5 +27,6 @@ SUMMARY_IGNORED_APPS = frozenset({
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DAILY_LOGS_DIR = os.path.join(DATA_DIR, "daily_activity_logs")
-MAIN_CSV = os.path.join(DATA_DIR, "Summarized_Activities.csv")
+# one summary file per calendar month: Summarized_Activities_<MM>_<YYYY>.csv
+SUMMARY_DIR = os.path.join(DATA_DIR, "monthly_summaries")
 WARNINGS_LOG = os.path.join(BASE_DIR, "warnings.log")

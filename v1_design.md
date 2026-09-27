@@ -1,3 +1,19 @@
+# new V1 design. older notes are not priority anymore
+
+1) monitoring_system/  
+- Apps: Computer_Tracker.py polls the foreground window every 3s via ctypes
+- Websites: browser extension (background.js) posts the active tab URL to a local server; per-browser build step handles Chrome/Brave/Edge.
+- Incognito/private: handled by a manual "Allow in Private" toggle per browser (documented in HOW_TO_INSTALL.md step 4) — no code gap, just never verified end-to-end
+- Gaps: Firefox unsupported, extension has no store listing (manual "load unpacked" per browser, no auto-update), no auth on the extension→tracker localhost POST, timestamps are naive local time not UTC, write-to-Pi happens on every session-end (noted as needing throttling).
+
+2) remove phone and raspberry pi server parts from production. don't delete them but just make them not run
+
+2) goal system
+
+
+
+=======================================================================================
+
 notes-structuring_ideas.md has accurate info
 readme.md also has accurate info but is more dated than notes-structuring_ideas
 

@@ -1,5 +1,6 @@
 data/daily_activity_logs/Daily_Activity_Logs-*.csv
-data/Summarized_Activities.csv
+data/Summarized_Activities.csv*
+data/monthly_summaries/
 data/pending_api_events.jsonl
 warnings.log
 __pycache__/

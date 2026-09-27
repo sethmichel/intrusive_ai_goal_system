@@ -18,4 +18,7 @@ phone_app/.expo/
 # monitoring system
 monitoring_system/data
 
+# goal system
+goal_system/data
+
 __pycache__/

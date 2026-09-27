@@ -5,20 +5,27 @@ import tempfile
 from datetime import datetime, date, timedelta
 from urllib.parse import urlparse
 
-from Config import DATA_DIR, DAILY_LOGS_DIR, MAIN_CSV, SUMMARY_IGNORED_APPS, WARNINGS_LOG
+from Config import (
+    DATA_DIR,
+    DAILY_LOGS_DIR,
+    SUMMARY_DIR,
+    SUMMARY_IGNORED_APPS,
+    WARNINGS_LOG,
+)
 
 '''
-handles all CSV persistence: creating data/Summarized_Activities.csv and per-day
-data/daily_activity_logs/Daily_Activity_Logs-<date>.csv files, writing raw activity rows,
+handles all CSV persistence: creating per-month data/monthly_summaries/Summarized_Activities_<MM>_<YYYY>.csv
+and per-day data/daily_activity_logs/Daily_Activity_Logs-<date>.csv files, writing raw activity rows,
 extracting hostnames from URLs, and summarizing/aggregating a finished day's raw rows into
-Summarized_Activities.csv (total seconds per app/website). The daily log is kept, not deleted,
+that day's monthly summary file (total seconds per app/website). The daily log is kept, not deleted,
 after being summarized.
 '''
 
 
 
-MAIN_COLUMNS = ["date", "app", "website", "duration", "url"]
+SUMMARY_COLUMNS = ["date", "app", "website", "duration", "url"]
 DAILY_COLUMNS = ["timestamp", "app", "url"]
+SUMMARY_PREFIX = "Summarized_Activities_"
 
 
 def _log_warning(message):
@@ -32,21 +39,42 @@ def ensure_data_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def ensure_main_csv():
-    ensure_data_dir()
-    if not os.path.exists(MAIN_CSV):
-        with open(MAIN_CSV, "w", newline="") as f:
-            csv.writer(f).writerow(MAIN_COLUMNS)
+def ensure_summary_dir():
+    os.makedirs(SUMMARY_DIR, exist_ok=True)
+
+
+def get_summary_csv_path(d):
+    """date(2026, 9, 27) -> data/monthly_summaries/Summarized_Activities_09_2026.csv"""
+    return os.path.join(SUMMARY_DIR, f"{SUMMARY_PREFIX}{d.month:02d}_{d.year}.csv")
+
+
+def ensure_summary_csv(d):
+    """Create the monthly summary file for d's month (header only) if it doesn't exist yet."""
+    ensure_summary_dir()
+    path = get_summary_csv_path(d)
+    if not os.path.exists(path):
+        with open(path, "w", newline="") as f:
+            csv.writer(f).writerow(SUMMARY_COLUMNS)
+    return path
+
+
+def list_summary_csvs():
+    """Return every monthly summary file path in SUMMARY_DIR."""
+    ensure_summary_dir()
+    return [
+        os.path.join(SUMMARY_DIR, name)
+        for name in os.listdir(SUMMARY_DIR)
+        if name.startswith(SUMMARY_PREFIX) and name.endswith(".csv")
+    ]
 
 
 def _append_rows_atomic(path, rows):
-    """Append rows to a CSV as an all-or-nothing operation: copy the existing
+    """Append rows to an existing CSV as an all-or-nothing operation: copy the existing
     file plus the new rows into a temp file in the same directory, then
     os.replace() it into place (atomic on Windows within a volume). This keeps a
     crash mid-append from leaving a day partially summarized -- which would make
     that date look already-done to get_summarized_dates() and permanently drop
     the rest of the day."""
-    ensure_main_csv()
     dir_name = os.path.dirname(path) or "."
     fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
     try:
@@ -137,11 +165,9 @@ def find_old_daily_csvs():
     return old
 
 
-def get_summarized_dates():
-    """Return the set of dates already aggregated into MAIN_CSV."""
-    ensure_main_csv()
+def _read_dates(path):
     dates = set()
-    with open(MAIN_CSV, "r", newline="") as f:
+    with open(path, "r", newline="") as f:
         for row in csv.DictReader(f):
             try:
                 dates.add(date.fromisoformat(row["date"]))
@@ -150,8 +176,16 @@ def get_summarized_dates():
     return dates
 
 
+def get_summarized_dates():
+    """Return the set of dates already aggregated into any monthly summary file."""
+    dates = set()
+    for path in list_summary_csvs():
+        dates |= _read_dates(path)
+    return dates
+
+
 def summarize_daily_csv(file_date, daily_path):
-    """Aggregate a finished daily CSV into MAIN_CSV. The daily CSV is kept on disk as a raw log."""
+    """Aggregate a finished daily CSV into its month's summary file. The daily CSV is kept on disk as a raw log."""
     from Tracker import KNOWN_BROWSERS, NEW_TAB_LABEL
 
     rows = []
@@ -241,11 +275,10 @@ def summarize_daily_csv(file_date, daily_path):
         for (app, website), secs in totals.items()
     ]
     if new_rows:
-        _append_rows_atomic(MAIN_CSV, new_rows)
+        _append_rows_atomic(ensure_summary_csv(file_date), new_rows)
 
 
 def check_and_summarize_old_dailies():
-    ensure_main_csv()
     already_summarized = get_summarized_dates()
     for d, path in find_old_daily_csvs():
         if d in already_summarized:
