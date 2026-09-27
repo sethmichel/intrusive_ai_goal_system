@@ -122,7 +122,7 @@ NOTE: browser new tabs are dropped. in the daily csv they appear as 2026-07-02T1
 - add firefox support
 - make the extension on the extension stores
 - Productive vs. unproductive classification. The entire "wasted time" framing depends on categorizing apps/sites (work vs. distraction). There's no category mapping anywhere — main.csv just has raw uncategorized durations.
-- Auto-start / background service. No Task Scheduler entry, no startup shortcut, no tray icon. You have to manually run python computer_tracker.py in a terminal every time.
+- ~~Auto-start / background service.~~ Done: `computer_app/launcher.py` runs the tracker from a tray icon, started at login by `computer_app/install_startup.ps1`.
 - is there anyway to stream line the private mode browsing enabling? it's a pain to turn on right now
 - disable the beep, it's only for debugging. probably shouldn't print warnings either
 - Timestamps are naive local time. datetime.now() / date.today() throughout. Fine on one machine today, but for a data agent feeding a bigger system it's worth either (a) documenting "all times are machine-local, no tz" as part of the schema contract, or (b) storing UTC. DST fall-back can also produce a negative-duration session — currently silently dropped by the duration <= 0 guard (Storage.py:188), which is acceptable but undocumented.

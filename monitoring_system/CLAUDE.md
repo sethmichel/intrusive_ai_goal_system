@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Windows-only, local RescueTime clone: tracks which app/website has focus and how long, storing results in CSV files. No GUI — this project is meant to be absorbed into a bigger project later that handles reporting/UI.
+A Windows-only, local RescueTime clone: tracks which app/website has focus and how long, storing results in CSV files. No GUI of its own — the repo-root `gui/app.py` reads its monthly summaries.
 
 ## Running it
+
+In normal use the tracker runs inside the tray app, `../computer_app/launcher.py`, as a background thread (started at login via `computer_app/install_startup.ps1`). For testing in a terminal:
 
 ```
 python Computer_Tracker.py
 ```
+
+`main()` holds a named-mutex single-instance lock and just returns if another tracker (tray or terminal) already has it.
 
 Then run `python extension/build_extension.py` — this generates one loadable folder per browser under `extension/build/` (`chrome/`, `brave/`, `edge/`), each with `BROWSER_PROCESS` baked into `background.js` to match that browser. Load the matching `extension/build/<browser>/` folder unpacked in `brave://extensions` (or `chrome://extensions` / `edge://extensions`) with Developer Mode on, once per browser you want tracked. The extension POSTs the active tab's URL to `http://127.0.0.1:7834`; the tracker polls the OS every 3s for the foreground process.
 

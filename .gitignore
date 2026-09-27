@@ -10,6 +10,7 @@ server/venv/
 
 # computer app runtime
 computer_app/launcher.log
+computer_app/icon.ico
 
 # phone app
 phone_app/node_modules/
@@ -22,3 +23,6 @@ monitoring_system/data
 goal_system/data
 
 __pycache__/
+
+# gui runtime
+gui/gui.log

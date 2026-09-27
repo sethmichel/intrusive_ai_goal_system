@@ -2,7 +2,7 @@ import json
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from Config import SERVER_HOST, SERVER_PORT
+from Config import POLL_INTERVAL, SERVER_HOST, SERVER_PORT
 
 
 '''
@@ -55,6 +55,9 @@ def get_latest_url(process_name):
 
 def start_server(port=SERVER_PORT):
     server = HTTPServer((SERVER_HOST, port), _ExtensionHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    # poll_interval only sets how often the idle loop wakes to check for shutdown() -- requests are
+    # still handled the instant they arrive. The 0.5s default meant 2 wakeups/sec forever; this
+    # matches the tracker's own cadence (shutdown() on Ctrl+C in RUN_ME.py can take up to that long).
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": POLL_INTERVAL}, daemon=True)
     thread.start()
     return server, port

@@ -18,9 +18,10 @@ unreachable (laptop offline, tailscale down), events just accumulate and get
 flushed next time a send succeeds. No new dependencies -- urllib only, matching
 this package's no-external-deps rule.
 
-Config comes from client_config.json at the repo root (shared with
-computer_app/). If that file is missing or has no server_url, syncing is
-silently disabled and the tracker is CSV-only, exactly like before.
+Config comes from client_config.json at the repo root. If that file is missing
+or has no server_url, syncing is silently disabled and the tracker is CSV-only,
+exactly like before. (The Pi server is out of scope for now, so that's the
+normal mode.)
 '''
 
 CLIENT_CONFIG_PATH = os.path.join(os.path.dirname(BASE_DIR), "client_config.json")

@@ -7,12 +7,13 @@
 - monitoring system
     - pushes every session end duration to the server as a live upsert. still writes to csv files as a local raw log
 - computer app
-    - uses a tray launcher (as a background app). polls for task time remnder and shows teh windows toasts. uses a pywebview dashboard gui that's html/js
+    - (2026-09-27, scope is now goal system + monitoring system only, no Pi/phone) tray launcher (`computer_app/launcher.py`) starts at login, runs the tracker, left-click opens the tkinter gui (`gui/app.py`). one gui window max, closing it doesn't stop monitoring, crashes show a popup. the old reminder polling + pywebview dashboard were Pi-only and are no longer used
 - phone app
     - expo react native app with idental gui 
 
 # todo
-- move secrets to a more secure system. right now if the files are accidently removed from gitignore then they'd be pushed to the public github. api key, token, unicorn server (x.x.x.x)
+- move secrets to a more secure system. right now if the files are accidently removed from gitignore then they'd be pushed to the public github. api key, token, unicorn server (x.x.x.x). this is clicnet_config and server/config.
+- minimize resource usage
 - pick a host id, it's just x.x.x.x right now
 - get a gemma key
 - test loading teh expo app on phone
@@ -34,6 +35,10 @@
 
 
 # V1 — what got built, every decision I made, and what's on you
+
+> **Historical (2026-09-27):** this report was written when the Pi server and phone app were in
+> scope. They're parked now; the tray app runs the tracker and opens the local tkinter gui instead
+> of the pywebview dashboard, and there are no reminder toasts. See `computer_app/README.md`.
 
 V1 is complete and functional: the Pi API server, the tracker→server activity sync, the
 Windows tray + dashboard app, and the Expo iPhone app. This file is the "tell me

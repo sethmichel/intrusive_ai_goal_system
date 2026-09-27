@@ -196,6 +196,7 @@ CREATE INDEX idx_activity_daily_date ON activity_daily(activity_date);
 # computer
 - windows app that starts at startup and is a background process but has a gui if opened.
     - option: a shortcut in shell:startup (or a Task Scheduler entry set to run at logon) launches a small launcher script that starts the tracker headless and creates a system tray icon via pystray (menu: "Open Dashboard" / "Quit").
+    - built (2026-09-27): exactly that, `computer_app/launcher.py` + `install_startup.ps1`. but with the Pi/phone out of scope, the tray opens the local tkinter gui (`gui/app.py`), not the pywebview dashboard below.
 
 - GUI: pywebview — it opens a native window that renders local HTML/CSS/JS (no Electron bloat, no separate runtime), and that HTML just calls the Pi's REST API with fetch/requests. This means the computer GUI, the future phone GUI, and the API are all speaking the exact same contract from day one, and you're writing HTML instead of learning a widget toolkit (Tkinter/Qt) for basic screens like "today's todo.". however, pywebview still needs a bundled webview runtime (uses Edge WebView2 on Windows, which is preinstalled on Win10/11). we can use tailwind css for styling. 
     - can't use tkinter. it can't be made to look nice, you'd need something else. most modern looking apps are just html, css, js running ina  windows shell. css makes the modern look

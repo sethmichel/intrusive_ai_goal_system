@@ -1,16 +1,26 @@
+import ctypes
 import os
 import sys
 import tkinter as tk
-from datetime import date
+import traceback
+from datetime import date, datetime
 from tkinter import messagebox, ttk
 from tkinter import font as tkfont
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GUI_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_DIR = os.path.dirname(GUI_DIR)
+LOG_PATH = os.path.join(GUI_DIR, "gui.log")
 sys.path.insert(0, os.path.join(REPO_DIR, "monitoring_system"))
 sys.path.insert(0, os.path.join(REPO_DIR, "goal_system"))
 
+# opened from the tray it runs under pythonw.exe, where stdout/stderr are None and tracebacks
+# would vanish -- keep them in a log file instead
+if sys.stdout is None or sys.stderr is None:
+    sys.stdout = sys.stderr = open(LOG_PATH, "a", buffering=1)
+
 import goals
 from Summary_Reader import DAY_ABBREVIATIONS, format_day_label, get_range_options, load_summary
+from Tracker import acquire_single_instance_lock
 
 '''
 local tkinter GUI for the goal + monitoring systems (no Pi, no phone). Three screens, switched
@@ -22,10 +32,12 @@ from the top bar:
   - Monitoring Data: a dropdown (this week / this month / last 14 days); picking an option
                     jumps straight to a summary of apps + websites for that range, read from the
                     monitoring system's monthly summary CSVs.
-Run via RUN_GUI.py at the repo root (or `python gui/app.py`).
+Run via RUN_GUI.py at the repo root (or `python gui/app.py`); the tray app (computer_app/launcher.py)
+opens it the same way. Only one window at a time: starting it again focuses the open one.
 '''
 
 WINDOW_TITLE = "Activity Tracker"
+GUI_LOCK_NAME = "ActivityTracker_GUI_SingleInstance"
 DAY_CHECK_MS = 60_000  # how often to check whether the date rolled over while the window is open
 
 COLOR_BG = "#ffffff"
@@ -378,9 +390,46 @@ class App(tk.Tk):
                 self.current.refresh()
         self.after(DAY_CHECK_MS, self._check_day)
 
+    def report_callback_exception(self, exc_type, exc_value, exc_tb):
+        """A button/menu handler raised. Tk's default just prints it (which goes nowhere under
+        pythonw), so the click would silently do nothing -- show it instead. The window stays up."""
+        log_error("error in a GUI action", exc_type, exc_value, exc_tb)
+        messagebox.showerror(WINDOW_TITLE, f"Something went wrong:\n\n{exc_value}\n\nDetails are in {LOG_PATH}",
+                             parent=self)
+
+
+def log_error(what, exc_type, exc_value, exc_tb):
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {what}")
+    traceback.print_exception(exc_type, exc_value, exc_tb)
+
+
+def focus_existing_window():
+    """Bring the already-open GUI window to the front (restoring it if minimized)."""
+    user32 = ctypes.windll.user32
+    hwnd = user32.FindWindowW("TkTopLevel", WINDOW_TITLE)
+    if not hwnd:
+        return  # the other instance is still starting up; its window will appear on its own
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.SetForegroundWindow(hwnd)
+
 
 def main():
-    App().mainloop()
+    lock = acquire_single_instance_lock(GUI_LOCK_NAME)  # held until this process exits
+    if lock is None:
+        focus_existing_window()
+        return
+    try:
+        App().mainloop()
+    except Exception:
+        log_error("GUI crashed", *sys.exc_info())
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            f"The {WINDOW_TITLE} window crashed and closed.\n\n{sys.exc_info()[1]}\n\n"
+            f"Monitoring is not affected. Details are in:\n{LOG_PATH}",
+            WINDOW_TITLE,
+            0x10 | 0x10000 | 0x40000,  # MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST
+        )
 
 
 if __name__ == "__main__":
