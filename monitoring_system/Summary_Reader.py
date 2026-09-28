@@ -3,7 +3,7 @@ import json
 import os
 from datetime import date, timedelta
 
-from Config import CATEGORIZING_ITEMS_PATH
+from Config import CATEGORIZING_ITEMS_PATH, BLOCKED_CATEGORY
 from Storage import get_summary_csv_path
 
 '''
@@ -14,7 +14,7 @@ reading every month file the range touches (e.g. Jan 8 looking back 14 days also
 last December's file). Only already-summarized days are shown -- today's live daily log
 isn't summarized until the day ends, so it never appears here.
 App and website names are relabeled here using data/Categorizing_Items.json (e.g.
-"risk of rain 2.exe" shows as "Risk of Rain 2" of kind "Game", "reddit.com" as "Reddit" of
+"risk of rain 2.exe" shows as "Risk of Rain 2" of kind "Game", "instagram.com" as "Instagram" of
 kind "Social Media"); the summary files themselves keep the raw names.
 '''
 
@@ -64,7 +64,7 @@ def _parse_duration(text):
 
 def load_categorized_items():
     """Read Categorizing_Items.json into {"risk of rain 2.exe": ("Game", "Risk of Rain 2"),
-    "reddit.com": ("Social Media", "Reddit"), ...}. Keys can be process names or websites.
+    "instagram.com": ("Social Media", "Instagram"), ...}. Keys can be process names or websites.
     Top-level keys are categories; "Games" becomes the kind "Game". Returns {} if the file
     is missing or malformed so the GUI falls back to raw names."""
     try:
@@ -78,7 +78,12 @@ def load_categorized_items():
             continue
         kind = category[:-1] if category.endswith("s") else category
         for raw_name, display_name in items.items():
-            lookup[raw_name.lower()] = (kind, display_name)
+            key = raw_name.lower()
+            # an item in several categories takes the last one, except the blocked category always
+            # wins so the GUI can flag it however the JSON is ordered
+            if lookup.get(key, ("",))[0] == BLOCKED_CATEGORY:
+                continue
+            lookup[key] = (kind, display_name)
     return lookup
 
 

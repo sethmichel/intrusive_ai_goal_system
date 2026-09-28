@@ -28,6 +28,7 @@ from Config import (
     SUMMARY_IGNORED_APPS,
 )
 from Api_Sync import ApiSync
+from Push_Notifier import BlockedContentNotifier
 
 '''
 main entry point/orchestrator. It runs the polling loop: checks the active window every 3s, detects app/browser switches,
@@ -65,6 +66,7 @@ def main():
     last_poll_time = datetime.now()
     session_start = None
     sync = ApiSync()
+    blocked = BlockedContentNotifier()
 
     def sync_session_end(end_time):
         """Push the just-finished session's duration to the Pi API. Mirrors the
@@ -126,6 +128,7 @@ def main():
             process_name, _ = get_active_window()
 
             if not process_name:
+                blocked.check("", "")
                 if current_app is not None:
                     sync_session_end(now)
                     _end_session(daily_csv, now)
@@ -140,6 +143,7 @@ def main():
                 url = get_latest_url(process_name)
 
                 if url is None:
+                    blocked.check("", "")
                     no_ext_counter += 1
                     if no_ext_counter >= NO_EXTENSION_ALERT_THRESHOLD:
                         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
@@ -155,6 +159,7 @@ def main():
 
                 if is_new_tab_url(url):
                     no_ext_counter = 0
+                    blocked.check("", "")
                     if current_app is not None:
                         sync_session_end(now)
                         _end_session(daily_csv, now, app_label=NEW_TAB_LABEL)
@@ -174,6 +179,7 @@ def main():
 
             # ── detect activity change (compare by domain for browsers) ──
             new_site = extract_website(new_url)
+            blocked.check(new_app, new_site)  # every poll, so it can re-notify while you stay on it
             cur_site = extract_website(current_url)
             if new_app == current_app and new_site == cur_site:
                 time.sleep(POLL_INTERVAL)

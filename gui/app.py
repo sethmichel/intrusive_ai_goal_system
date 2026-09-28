@@ -19,6 +19,7 @@ if sys.stdout is None or sys.stderr is None:
     sys.stdout = sys.stderr = open(LOG_PATH, "a", buffering=1)
 
 import goals
+from Config import BLOCKED_CATEGORY
 from Summary_Reader import DAY_ABBREVIATIONS, format_day_label, get_range_options, load_summary
 from Tracker import acquire_single_instance_lock
 
@@ -45,6 +46,7 @@ COLOR_TEXT = "#1f1f1f"
 COLOR_DONE = "#a0a0a0"
 COLOR_OVERDUE = "#c62828"
 COLOR_OVERDUE_BG = "#fdecea"
+COLOR_BLOCKED_BG = "#ffd6d6"  # monitoring rows in Categorizing_Items.json's blocked category
 COLOR_ROW_BORDER = "#e6e6e6"
 COLOR_MUTED = "#6b6b6b"
 
@@ -281,8 +283,9 @@ class MonitoringScreen(ttk.Frame):
         self.tree.heading("kind", text="Type", anchor="w")
         self.tree.heading("time", text="Time", anchor="e")
         self.tree.column("name", width=420, anchor="w")
-        self.tree.column("kind", width=110, anchor="w", stretch=False)
+        self.tree.column("kind", width=140, anchor="w", stretch=False)
         self.tree.column("time", width=120, anchor="e", stretch=False)
+        self.tree.tag_configure("blocked", background=COLOR_BLOCKED_BG, foreground=COLOR_OVERDUE)
         scrollbar = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -298,7 +301,9 @@ class MonitoringScreen(ttk.Frame):
         entries, days_with_data = load_summary(start, end)
         self.tree.delete(*self.tree.get_children())
         for entry in entries:
-            self.tree.insert("", "end", values=(entry["name"], entry["kind"], format_seconds(entry["seconds"])))
+            tags = ("blocked",) if entry["kind"] == BLOCKED_CATEGORY else ()
+            self.tree.insert("", "end", values=(entry["name"], entry["kind"], format_seconds(entry["seconds"])),
+                             tags=tags)
 
         if entries:
             total = sum(e["seconds"] for e in entries)
