@@ -29,4 +29,6 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 DAILY_LOGS_DIR = os.path.join(DATA_DIR, "daily_activity_logs")
 # one summary file per calendar month: Summarized_Activities_<MM>_<YYYY>.csv
 SUMMARY_DIR = os.path.join(DATA_DIR, "monthly_summaries")
+# display names + categories for raw process names, applied only when the GUI reads summaries
+CATEGORIZING_ITEMS_PATH = os.path.join(DATA_DIR, "Categorizing_Items.json")
 WARNINGS_LOG = os.path.join(BASE_DIR, "warnings.log")

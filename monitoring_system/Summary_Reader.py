@@ -1,7 +1,9 @@
 import csv
+import json
 import os
 from datetime import date, timedelta
 
+from Config import CATEGORIZING_ITEMS_PATH
 from Storage import get_summary_csv_path
 
 '''
@@ -11,6 +13,9 @@ data/monthly_summaries/Summarized_Activities_<MM>_<YYYY>.csv rows over a date ra
 reading every month file the range touches (e.g. Jan 8 looking back 14 days also reads
 last December's file). Only already-summarized days are shown -- today's live daily log
 isn't summarized until the day ends, so it never appears here.
+App and website names are relabeled here using data/Categorizing_Items.json (e.g.
+"risk of rain 2.exe" shows as "Risk of Rain 2" of kind "Game", "reddit.com" as "Reddit" of
+kind "Social Media"); the summary files themselves keep the raw names.
 '''
 
 DAY_ABBREVIATIONS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -57,10 +62,31 @@ def _parse_duration(text):
     return hours * 3600 + minutes * 60 + seconds
 
 
+def load_categorized_items():
+    """Read Categorizing_Items.json into {"risk of rain 2.exe": ("Game", "Risk of Rain 2"),
+    "reddit.com": ("Social Media", "Reddit"), ...}. Keys can be process names or websites.
+    Top-level keys are categories; "Games" becomes the kind "Game". Returns {} if the file
+    is missing or malformed so the GUI falls back to raw names."""
+    try:
+        with open(CATEGORIZING_ITEMS_PATH, "r", encoding="utf-8") as f:
+            categories = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    lookup = {}
+    for category, items in categories.items():
+        if not isinstance(items, dict):
+            continue
+        kind = category[:-1] if category.endswith("s") else category
+        for raw_name, display_name in items.items():
+            lookup[raw_name.lower()] = (kind, display_name)
+    return lookup
+
+
 def load_summary(start, end):
     """Total every summarized app/website between start and end (inclusive).
     Returns (entries, days_with_data) where entries is
-    [{"name": str, "kind": "App" | "Website", "seconds": int}, ...] sorted longest first."""
+    [{"name": str, "kind": "App" | "Website" | <category>, "seconds": int}, ...] sorted longest first."""
+    categorized = load_categorized_items()
     totals = {}
     days_with_data = set()
 
@@ -83,7 +109,10 @@ def load_summary(start, end):
                 website = row.get("website") or ""
                 if not app and not website:
                     continue
-                key = ("Website", website) if website else ("App", app)
+                if website:
+                    key = categorized.get(website.lower(), ("Website", website))
+                else:
+                    key = categorized.get(app.lower(), ("App", app))
                 totals[key] = totals.get(key, 0) + seconds
                 days_with_data.add(row_date)
 
