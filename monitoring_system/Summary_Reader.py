@@ -20,6 +20,7 @@ kind "Social Media"); the summary files themselves keep the raw names.
 
 DAY_ABBREVIATIONS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 RECENT_DAYS = 14
+UNCATEGORIZED = "Uncategorized"  # category-totals bucket for plain "App" / "Website" entries
 
 
 def format_day_label(d):
@@ -62,21 +63,31 @@ def _parse_duration(text):
     return hours * 3600 + minutes * 60 + seconds
 
 
-def load_categorized_items():
-    """Read Categorizing_Items.json into {"risk of rain 2.exe": ("Game", "Risk of Rain 2"),
-    "instagram.com": ("Social Media", "Instagram"), ...}. Keys can be process names or websites.
-    Top-level keys are categories; "Games" becomes the kind "Game". Returns {} if the file
-    is missing or malformed so the GUI falls back to raw names."""
+def category_kind(category):
+    """'Games' -> 'Game', 'Work' -> 'Work': the kind a category's entries show up as."""
+    return category[:-1] if category.endswith("s") else category
+
+
+def _load_categories():
+    """Categorizing_Items.json as a dict, or {} if the file is missing or malformed."""
     try:
         with open(CATEGORIZING_ITEMS_PATH, "r", encoding="utf-8") as f:
             categories = json.load(f)
     except (OSError, ValueError):
         return {}
+    return categories if isinstance(categories, dict) else {}
+
+
+def load_categorized_items():
+    """Read Categorizing_Items.json into {"risk of rain 2.exe": ("Game", "Risk of Rain 2"),
+    "instagram.com": ("Social Media", "Instagram"), ...}. Keys can be process names or websites.
+    Top-level keys are categories; "Games" becomes the kind "Game". Returns {} if the file
+    is missing or malformed so the GUI falls back to raw names."""
     lookup = {}
-    for category, items in categories.items():
+    for category, items in _load_categories().items():
         if not isinstance(items, dict):
             continue
-        kind = category[:-1] if category.endswith("s") else category
+        kind = category_kind(category)
         for raw_name, display_name in items.items():
             key = raw_name.lower()
             # an item in several categories takes the last one, except the blocked category always
@@ -127,3 +138,17 @@ def load_summary(start, end):
     ]
     entries.sort(key=lambda e: e["seconds"], reverse=True)
     return entries, days_with_data
+
+
+def category_totals(entries):
+    """Sum load_summary() entries per Categorizing_Items.json category, in the JSON's order, with
+    UNCATEGORIZED (plain apps/websites) last: [("Games", 11520), ("Work", 0), ..., ("Uncategorized", 900)].
+    Every category is listed, even at 0 seconds."""
+    categories = [c for c, items in _load_categories().items() if isinstance(items, dict)]
+    by_kind = {}
+    for entry in entries:
+        by_kind[entry["kind"]] = by_kind.get(entry["kind"], 0) + entry["seconds"]
+    totals = [(category, by_kind.pop(category_kind(category), 0)) for category in categories]
+    # whatever's left is "App" / "Website", or a kind from a category removed since loading
+    totals.append((UNCATEGORIZED, sum(by_kind.values())))
+    return totals

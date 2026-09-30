@@ -20,7 +20,8 @@ if sys.stdout is None or sys.stderr is None:
 
 import goals
 from Config import BLOCKED_CATEGORY
-from Summary_Reader import DAY_ABBREVIATIONS, format_day_label, get_range_options, load_summary
+from Summary_Reader import (DAY_ABBREVIATIONS, category_totals, format_day_label, get_range_options,
+                            load_summary)
 from Tracker import acquire_single_instance_lock
 
 '''
@@ -32,7 +33,7 @@ from the top bar:
   - Goal History:   past goals with their due date and whether they were done on time.
   - Monitoring Data: a dropdown (this week / this month / last 14 days); picking an option
                     jumps straight to a summary of apps + websites for that range, read from the
-                    monitoring system's monthly summary CSVs.
+                    monitoring system's monthly summary CSVs, with per-category totals above it.
 Run via RUN_GUI.py at the repo root (or `python gui/app.py`); the tray app (computer_app/launcher.py)
 opens it the same way. Only one window at a time: starting it again focuses the open one.
 '''
@@ -49,6 +50,7 @@ COLOR_OVERDUE_BG = "#fdecea"
 COLOR_BLOCKED_BG = "#ffd6d6"  # monitoring rows in Categorizing_Items.json's blocked category
 COLOR_ROW_BORDER = "#e6e6e6"
 COLOR_MUTED = "#6b6b6b"
+CATEGORIES_PER_ROW = 2  # monitoring screen's category-totals panel
 
 
 def parse_due_date(text, today):
@@ -83,7 +85,9 @@ def format_due(d, today):
 
 
 def format_seconds(seconds):
-    """3930 -> '1h 05m', 300 -> '5m', 20 -> '<1m'"""
+    """3930 -> '1h 05m', 300 -> '5m', 20 -> '<1m', 0 -> '0m'"""
+    if not seconds:
+        return "0m"
     hours, remainder = divmod(int(seconds), 3600)
     minutes = remainder // 60
     if hours:
@@ -276,7 +280,10 @@ class MonitoringScreen(ttk.Frame):
         self.summary = ttk.Label(self, style="Muted.TLabel")
         self.summary.pack(anchor="w", padx=16, pady=(0, 8))
 
-        table = ttk.Frame(self)
+        # per-category totals, CATEGORIES_PER_ROW to a row; hidden when the range has no data
+        self.category_panel = ttk.Frame(self)
+
+        self.table = table = ttk.Frame(self)
         table.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         self.tree = ttk.Treeview(table, columns=("name", "kind", "time"), show="headings")
         self.tree.heading("name", text="App / Website", anchor="w")
@@ -305,6 +312,7 @@ class MonitoringScreen(ttk.Frame):
             self.tree.insert("", "end", values=(entry["name"], entry["kind"], format_seconds(entry["seconds"])),
                              tags=tags)
 
+        self._show_category_totals(entries)
         if entries:
             total = sum(e["seconds"] for e in entries)
             day_word = "day" if len(days_with_data) == 1 else "days"
@@ -313,6 +321,24 @@ class MonitoringScreen(ttk.Frame):
         else:
             self.summary.configure(text="No summarized data for this range. Days get summarized after they end "
                                         "(at midnight, or the next time the tracker starts).")
+
+    def _show_category_totals(self, entries):
+        for child in self.category_panel.winfo_children():
+            child.destroy()
+        if not entries:
+            self.category_panel.pack_forget()
+            return
+        for i, (category, seconds) in enumerate(category_totals(entries)):
+            row, pair = divmod(i, CATEGORIES_PER_ROW)
+            if category == BLOCKED_CATEGORY:
+                name_style, time_style = "CategoryBlocked.TLabel", "CategoryBlockedTime.TLabel"
+            else:
+                name_style, time_style = "TLabel", "CategoryTime.TLabel"
+            ttk.Label(self.category_panel, text=f"{category}:", style=name_style).grid(
+                row=row, column=pair * 2, sticky="w", padx=(0 if pair == 0 else 32, 8), pady=1)
+            ttk.Label(self.category_panel, text=format_seconds(seconds), style=time_style).grid(
+                row=row, column=pair * 2 + 1, sticky="w", pady=1)
+        self.category_panel.pack(anchor="w", padx=16, pady=(0, 10), before=self.table)
 
 
 class App(tk.Tk):
@@ -358,6 +384,10 @@ class App(tk.Tk):
         style.configure("Heading.TLabel", font=(self.body_font.actual("family"), 16, "bold"))
         style.configure("Muted.TLabel", foreground=COLOR_MUTED)
         style.configure("Error.TLabel", foreground=COLOR_OVERDUE)
+        bold = (self.body_font.actual("family"), 11, "bold")
+        style.configure("CategoryTime.TLabel", font=bold)
+        style.configure("CategoryBlocked.TLabel", foreground=COLOR_OVERDUE)
+        style.configure("CategoryBlockedTime.TLabel", font=bold, foreground=COLOR_OVERDUE)
         style.configure("Treeview", rowheight=28)
         style.configure("Treeview.Heading", font=(self.body_font.actual("family"), 11, "bold"))
 
